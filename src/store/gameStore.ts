@@ -1,0 +1,462 @@
+import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
+import type { Character, GameSession, FeedEntry, ScenarioPack, SessionResult, TimerDifficulty } from '../types/game'
+import type { DMResponse } from '../types/dm'
+import { applyLevelUp } from '../utils/leveling'
+import type { LevelUpChoice } from '../utils/leveling'
+import type { CommConfig } from '../engine/webhookClient'
+import type { SessionRecord } from '../types/history'
+import type { ProviderConfig } from '../types/provider'
+import type { AdversaryState, AdversaryClass } from '../types/adversary'
+import type { NPCState } from '../types/npc'
+import { initialNPCState, trustToStance } from '../types/npc'
+import type { OrgState } from '../types/orgState'
+import { INITIAL_ORG_STATE } from '../types/orgState'
+import { applySessionToOrg } from '../utils/orgStateEngine'
+import type { OrgProfile } from '../types/orgProfile'
+
+interface GameStore {
+  roster:       Character[]
+  // Characters imported from content packs. Read-only here (managed by pack
+  // install/uninstall); the user copies one into the roster to actually play it.
+  library:      Character[]
+  addCharacter:         (c: Character) => void
+  removeCharacter:      (id: string) => void
+  updateCharacter:      (id: string, updates: Partial<Character>) => void
+  updateSessionPlayer:  (id: string, updates: Partial<Character>) => void
+  clearRoster:          () => void
+
+  session:      GameSession | null
+  feed:         FeedEntry[]
+  isDMThinking: boolean
+  result:       SessionResult | null
+
+  initSession:  (scenario: ScenarioPack, players: Character[], mode: 'solo' | 'team' | 'adversary', timerDifficulty: TimerDifficulty, adversaryPlayerId?: string, adversaryClass?: AdversaryClass) => void
+
+  pendingAction:  string
+  setAction:      (action: string) => void
+
+  applyDMResponse:   (response: DMResponse) => void
+  appendFeed:        (entry: FeedEntry) => void
+  applyAdversaryRoll: (evaded: boolean, stageAdvanced: string | null, stealthDelta: number, complicationsAdded: string[]) => void
+
+  markRoundTimerExpired: () => void
+  advanceTurn:      () => void
+
+  endSession:  (result: SessionResult) => void
+  levelUpCharacter: (characterId: string, newLevel: number, choice: LevelUpChoice) => void
+  resetAll:    () => void
+
+  // Facilitator controls
+  facilitatorAdjustClock:       (deltaMins: number) => void
+  facilitatorSetAttackerStage:  (stage: string) => void
+  facilitatorAddComplication:   (name: string) => void
+  facilitatorRemoveComplication:(name: string) => void
+  facilitatorNote:              (text: string) => void
+  facilitatorGenerateHotWash:   () => void
+
+  providerConfig:    ProviderConfig | null
+  setProviderConfig: (cfg: ProviderConfig | null) => void
+
+  commConfig:    CommConfig | null
+  setCommConfig: (cfg: CommConfig | null) => void
+
+  sessionHistory:  SessionRecord[]
+  recordSession:   (record: SessionRecord) => void
+  clearHistory:    () => void
+
+  orgState:            OrgState
+  applySessionToOrg:   (session: GameSession, result: SessionResult) => void
+  resetOrgState:       () => void
+
+  activeOrgProfile:    OrgProfile | null  // set when a campaign launches; null for ad-hoc scenarios
+  setActiveOrgProfile: (profile: OrgProfile | null) => void
+}
+
+function nextPlayerId(order: string[], current: string): string {
+  const idx = order.indexOf(current)
+  return order[(idx + 1) % order.length]
+}
+
+export const useGameStore = create<GameStore>()(
+  persist(
+    (set, get) => ({
+      roster:         [],
+      library:        [],
+      session:        null,
+      feed:           [],
+      isDMThinking:   false,
+      result:         null,
+      pendingAction:  '',
+      providerConfig: null,
+      commConfig:     null,
+      sessionHistory: [],
+      orgState:       INITIAL_ORG_STATE,
+      activeOrgProfile: null,
+
+      addCharacter:    (c) => set((s) => ({ roster: [...s.roster, c] })),
+      removeCharacter: (id) => set((s) => ({ roster: s.roster.filter((c) => c.id !== id) })),
+      updateCharacter: (id, updates) => set((s) => ({
+        roster: s.roster.map((c) => c.id === id ? { ...c, ...updates } : c),
+      })),
+      updateSessionPlayer: (id, updates) => set((s) => ({
+        roster: s.roster.map((c) => c.id === id ? { ...c, ...updates } : c),
+        session: s.session
+          ? { ...s.session, players: s.session.players.map((p) => p.id === id ? { ...p, ...updates } : p) }
+          : null,
+      })),
+      clearRoster:     () => set({ roster: [] }),
+
+      setAction: (action) => set({ pendingAction: action }),
+
+      setProviderConfig: (cfg) => set({ providerConfig: cfg }),
+      setCommConfig: (cfg) => set({ commConfig: cfg }),
+
+      recordSession: (record) =>
+        set((s) => ({
+          sessionHistory: [record, ...s.sessionHistory.filter((r) => r.id !== record.id)],
+        })),
+      clearHistory: () => set({ sessionHistory: [] }),
+
+      initSession: (scenario, players, mode, timerDifficulty, adversaryPlayerId, adversaryClass) => {
+        // In adversary mode, exclude the adversary from the defender initiative order
+        const defenders = mode === 'adversary' && adversaryPlayerId
+          ? players.filter((p) => p.id !== adversaryPlayerId)
+          : players
+
+        const initiativeOrder = [...defenders]
+          .sort((a, b) => {
+            const modA = a.stats.agility + (a.traits.includes('First Responder') ? 3 : 0)
+            const modB = b.stats.agility + (b.traits.includes('First Responder') ? 3 : 0)
+            const rollA = Math.floor(Math.random() * 20) + 1 + modA
+            const rollB = Math.floor(Math.random() * 20) + 1 + modB
+            return rollB - rollA
+          })
+          .map((p) => p.id)
+
+        const adversary: AdversaryState | undefined =
+          mode === 'adversary' && adversaryPlayerId && adversaryClass
+            ? {
+                playerId:            adversaryPlayerId,
+                adversaryClass,
+                objectivesCompleted: [],
+                stealthScore:        100,
+                rollHistory:         [],
+                firstActionThisAct:  true,
+              }
+            : undefined
+
+        // NPCs are opt-in per scenario (hidden by default). Build only the cast
+        // the scenario declares; carry forward each one's org-level reputation.
+        const { npcReputation } = get().orgState
+        const npcs: NPCState[] = (scenario.npcRoles ?? [])
+          .map((role) => {
+            const base  = initialNPCState(role)
+            const carry = npcReputation[role] ?? 0
+            const trust = Math.max(20, Math.min(80, base.trust + carry))
+            return { ...base, trust, stance: trustToStance(trust) }
+          })
+
+        const session: GameSession = {
+          id:                     crypto.randomUUID(),
+          scenario,
+          players,
+          mode,
+          initiativeOrder,
+          currentTurnPlayerId:    initiativeOrder[0],
+          act:                    1,
+          round:                  1,
+          scenarioClockRemaining: scenario.scenarioClockStart,
+          attackerProgress:       [scenario.killChainStages[0]],
+          activeComplications:    [],
+          lastRoll:               null,
+          roundTimerExpired:      false,
+          phase:                  'init',
+          status:                 'active',
+          timerDifficulty,
+          startedAt:              Date.now(),
+          adversary,
+          npcs,
+        }
+        set({ session, feed: [], result: null, isDMThinking: true })
+      },
+
+      appendFeed: (entry) => set((s) => ({ feed: [...s.feed, entry] })),
+
+      applyAdversaryRoll: (_evaded, stageAdvanced, stealthDelta, complicationsAdded) =>
+        set((s) => {
+          if (!s.session?.adversary) return {}
+          const adv = s.session.adversary
+
+          const newStealth = Math.max(0, Math.min(100, adv.stealthScore + stealthDelta))
+          const newProgress = stageAdvanced
+            ? [...s.session.attackerProgress, stageAdvanced]
+            : s.session.attackerProgress
+          const newComplications = [
+            ...s.session.activeComplications,
+            ...complicationsAdded,
+          ]
+
+          const failStage = s.session.scenario.killChainStages[s.session.scenario.killChainStages.length - 1]
+          const status    = newProgress.includes(failStage) ? 'defeat' : s.session.status
+
+          return {
+            session: {
+              ...s.session,
+              attackerProgress:    newProgress,
+              activeComplications: newComplications,
+              status,
+              adversary: {
+                ...adv,
+                stealthScore:       newStealth,
+                firstActionThisAct: false,
+                objectivesCompleted: stageAdvanced
+                  ? [...adv.objectivesCompleted, stageAdvanced]
+                  : adv.objectivesCompleted,
+              },
+            },
+          }
+        }),
+
+      applyDMResponse: (response) => {
+        const s = get().session
+        if (!s) return
+
+        const sc = response.stateChanges
+
+        // State is MONOTONE: dedupe additions and never re-add what was just
+        // removed. The DM occasionally re-emits a complication or kill-chain
+        // stage that is already active / resolved; without these guards the
+        // arrays accumulate duplicates and "contained" threats reappear, which
+        // makes sessions feel like they're spinning in place. The DM prompt
+        // also instructs the DM not to do this, but the engine enforces it.
+        const removedSet = new Set(sc.complicationsRemoved)
+        const addedComplications = sc.complicationsAdded.filter((c) => !removedSet.has(c))
+        const newComplications = Array.from(new Set([
+          ...s.activeComplications.filter((c) => !removedSet.has(c)),
+          ...addedComplications,
+        ]))
+        const newProgress = Array.from(new Set([...s.attackerProgress, ...sc.attackerProgressAdded]))
+        const newClock = Math.max(0, s.scenarioClockRemaining + sc.scenarioClockDeltaMinutes)
+        const newAct   = sc.actChange ?? s.act
+
+        const failStage = s.scenario.killChainStages[s.scenario.killChainStages.length - 1]
+        const status    = newProgress.includes(failStage) ? 'defeat' : s.status
+
+        // Reset insider_threat firstActionThisAct on act transition
+        const adversary = s.adversary && sc.actChange !== null
+          ? { ...s.adversary, firstActionThisAct: true }
+          : s.adversary
+
+        const newNpcs = sc.npcUpdates.length > 0
+          ? s.npcs.map((npc) => {
+              const update = sc.npcUpdates.find((u) => u.role === npc.role)
+              if (!update) return npc
+              const newTrust = Math.max(0, Math.min(100, npc.trust + update.trustDelta))
+              const newStance = update.stance ?? trustToStance(newTrust)
+              return {
+                ...npc,
+                trust:        newTrust,
+                stance:       newStance,
+                introduced:   true,  // any DM update reveals an emergent NPC to the team
+                awareness:    update.awarenessAdded.length > 0
+                  ? [...npc.awareness, ...update.awarenessAdded]
+                  : npc.awareness,
+                interactions: update.summary
+                  ? [...npc.interactions, {
+                      round:      s.round,
+                      act:        s.act,
+                      summary:    update.summary,
+                      trustDelta: update.trustDelta,
+                    }]
+                  : npc.interactions,
+                lastActiveRound: update.summary ? s.round : npc.lastActiveRound,
+              }
+            })
+          : s.npcs
+
+        set({
+          session: {
+            ...s,
+            attackerProgress:       newProgress,
+            activeComplications:    newComplications,
+            scenarioClockRemaining: newClock,
+            act:                    newAct,
+            phase:                  'turn',
+            roundTimerExpired:      false,
+            status,
+            adversary,
+            npcs:                   newNpcs,
+          },
+          isDMThinking:  false,
+          pendingAction: '',
+        })
+      },
+
+      markRoundTimerExpired: () =>
+        set((s) => ({
+          session: s.session ? { ...s.session, roundTimerExpired: true } : null,
+        })),
+
+      // Advance to the next player — does NOT set isDMThinking.
+      // The DM only speaks in response to a player action, not on turn advance.
+      advanceTurn: () =>
+        set((s) => {
+          if (!s.session) return {}
+          const nextId   = nextPlayerId(s.session.initiativeOrder, s.session.currentTurnPlayerId)
+          const newRound = nextId === s.session.initiativeOrder[0]
+            ? s.session.round + 1
+            : s.session.round
+          return {
+            session: {
+              ...s.session,
+              currentTurnPlayerId: nextId,
+              round:               newRound,
+            },
+          }
+        }),
+
+      levelUpCharacter: (characterId, newLevel, choice) =>
+        set((s) => {
+          const character = s.roster.find((c) => c.id === characterId)
+          if (!character) return {}
+          const updates = applyLevelUp(character, newLevel, choice)
+          return {
+            roster: s.roster.map((c) => c.id === characterId ? { ...c, ...updates } : c),
+          }
+        }),
+
+      endSession: (result) =>
+        set((s) => {
+          if (!s.session) return { result }
+          const xpEach   = Math.round(result.xpAwarded / Math.max(1, s.session.players.length))
+          const playerIds = new Set(s.session.players.map((p) => p.id))
+          return {
+            result,
+            roster: s.roster.map((c) =>
+              playerIds.has(c.id) ? { ...c, xp: c.xp + xpEach } : c
+            ),
+            session: { ...s.session, status: result.outcome === 'defeat' ? 'defeat' : 'victory' },
+          }
+        }),
+
+      facilitatorAdjustClock: (deltaMins) =>
+        set((s) => ({
+          session: s.session
+            ? { ...s.session, scenarioClockRemaining: Math.max(0, s.session.scenarioClockRemaining + deltaMins) }
+            : null,
+        })),
+
+      facilitatorSetAttackerStage: (stage) =>
+        set((s) => {
+          if (!s.session) return {}
+          const stages   = s.session.scenario.killChainStages
+          const idx      = stages.indexOf(stage)
+          if (idx === -1) return {}
+          const progress = stages.slice(0, idx + 1)
+          const failStage = stages[stages.length - 1]
+          const status    = progress.includes(failStage) ? 'defeat' : s.session.status
+          return { session: { ...s.session, attackerProgress: progress, status } }
+        }),
+
+      facilitatorAddComplication: (name) =>
+        set((s) => ({
+          session: s.session
+            ? { ...s.session, activeComplications: [...s.session.activeComplications, name] }
+            : null,
+        })),
+
+      facilitatorRemoveComplication: (name) =>
+        set((s) => ({
+          session: s.session
+            ? { ...s.session, activeComplications: s.session.activeComplications.filter((c) => c !== name) }
+            : null,
+        })),
+
+      facilitatorNote: (text) =>
+        set((s) => ({
+          feed: [...s.feed, {
+            id:        crypto.randomUUID(),
+            type:      'system' as const,
+            speaker:   'FACILITATOR',
+            text,
+            timestamp: Date.now(),
+          }],
+        })),
+
+      facilitatorGenerateHotWash: () => {
+        const { session, feed, roster } = get()
+        if (!session) return
+        const hintsUsed     = feed.filter((e) => e.type === 'hint').length
+        const timerExpiries = feed.filter((e) => e.type === 'system' && e.speaker === 'TIMER').length
+        const critHits      = feed.filter((e) => e.outcome === 'critical_hit').length
+        const critFails     = feed.filter((e) => e.outcome === 'critical_fail').length
+        const rollCount     = feed.filter((e) => e.type === 'roll_result').length
+        const xpAwarded     = Math.min(200, rollCount * 8 + critHits * 15)
+        const xpEach        = Math.round(xpAwarded / Math.max(1, session.players.length))
+        const playerIds     = new Set(session.players.map((p) => p.id))
+        set({
+          result: {
+            outcome:            'partial',
+            xpAwarded,
+            criticalHits:       critHits,
+            criticalFails:      critFails,
+            injectsSurvived:    feed.filter((e) => e.type === 'inject').length,
+            clockRemaining:     session.scenarioClockRemaining,
+            roundsPlayed:       session.round,
+            startedAt:          session.startedAt,
+            endedAt:            Date.now(),
+            actsCompleted:      session.act,
+            finalAttackerStage: session.attackerProgress[session.attackerProgress.length - 1],
+            hintsUsed,
+            timerExpiries,
+            adversaryStealthScore: session.adversary?.stealthScore,
+            adversaryObjectives:   session.adversary?.objectivesCompleted.length,
+            adversaryRoundsActive: session.adversary?.rollHistory.length,
+          },
+          roster: roster.map((c) =>
+            playerIds.has(c.id) ? { ...c, xp: c.xp + xpEach } : c
+          ),
+        })
+      },
+
+      applySessionToOrg: (session, result) =>
+        set((s) => ({ orgState: applySessionToOrg(s.orgState, session, result) })),
+
+      resetOrgState: () => set({ orgState: INITIAL_ORG_STATE }),
+
+      setActiveOrgProfile: (profile) => set({ activeOrgProfile: profile }),
+
+      resetAll: () => set({
+        session:          null,
+        feed:             [],
+        result:           null,
+        pendingAction:    '',
+        isDMThinking:     false,
+        activeOrgProfile: null,
+        // roster and providerConfig are intentionally preserved
+      }),
+    }),
+    {
+      name: 'dice-game-store',
+      // Only secrets/connection config stay in localStorage (client-side) — API
+      // keys must never go to the shared server DB. All game data is persisted
+      // through the API (see src/api/sync.ts).
+      partialize: (state) => ({
+        providerConfig: state.providerConfig,
+        commConfig:     state.commConfig,
+      }),
+      // Migrate users who had apiKey stored before multi-provider support
+      onRehydrateStorage: () => (state) => {
+        const legacy = state as unknown as Record<string, unknown>
+        if (state && !state.providerConfig && typeof legacy['apiKey'] === 'string' && legacy['apiKey']) {
+          state.providerConfig = {
+            provider: 'anthropic',
+            apiKey:   legacy['apiKey'] as string,
+            model:    'claude-sonnet-4-6',
+          }
+        }
+      },
+    },
+  ),
+)
