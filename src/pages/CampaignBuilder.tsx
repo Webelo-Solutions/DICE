@@ -314,6 +314,12 @@ function ScenarioEditorForm({ initial, onSave, onDelete, isNew }: SEProps) {
                 )}
               </div>
 
+              <Field label="Scene Seed">
+                <textarea className={`${inputCls} h-16 resize-none`} value={act.seed}
+                  onChange={(e) => setAct(ai, { seed: e.target.value })}
+                  placeholder="Opening scene the DM narrates to set up this act…" />
+              </Field>
+
               <Field label="Primary Objective">
                 <textarea className={`${inputCls} h-14 resize-none`} value={act.primaryObjective}
                   onChange={(e) => setAct(ai, { primaryObjective: e.target.value })}
@@ -898,15 +904,19 @@ export function CampaignBuilder() {
                     text-terminal-green text-xs font-bold tracking-widest hover:bg-terminal-green/5 transition-colors">
                   + New
                 </button>
-                <button
-                  onClick={() => {}}
+                <div
+                  tabIndex={0}
+                  role="button"
                   title="Fork a built-in scenario to customize it"
                   className="px-2 py-2 rounded border border-terminal-border text-terminal-dim text-xs
-                    hover:border-terminal-dim hover:text-white transition-colors relative group"
+                    hover:border-terminal-dim hover:text-white transition-colors relative group cursor-pointer
+                    select-none focus:outline-none focus:border-terminal-dim focus:text-white"
                 >
                   Fork ↗
+                  {/* Menu reveals on hover or keyboard focus; a plain div wrapper (not a
+                      button) avoids nesting these fork buttons inside another button. */}
                   <div className="absolute left-0 top-full mt-1 w-48 bg-terminal-surface border border-terminal-border
-                    rounded shadow-lg p-1 hidden group-focus-within:block z-20">
+                    rounded shadow-lg p-1 hidden group-hover:block group-focus-within:block z-20">
                     {ALL_SCENARIOS.map((s) => (
                       <button key={s.id} onClick={() => handleForkScenario(s)}
                         className="w-full text-left px-2 py-1.5 text-[10px] text-terminal-dim
@@ -915,7 +925,7 @@ export function CampaignBuilder() {
                       </button>
                     ))}
                   </div>
-                </button>
+                </div>
               </div>
             )}
           </div>

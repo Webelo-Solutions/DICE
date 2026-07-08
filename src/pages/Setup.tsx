@@ -10,16 +10,19 @@ export function Setup() {
   const user          = useUserStore((s) => s.user)
   const setupRequired = useUserStore((s) => s.setupRequired)
 
-  // Guard against direct navigation to /setup when setup is already done.
-  if (user)            return <Navigate to="/" replace />
-  if (!setupRequired)  return <Navigate to="/login" replace />
-
   const [username,    setUsername]    = useState('')
   const [displayName, setDisplayName] = useState('')
   const [password,    setPassword]    = useState('')
   const [confirm,     setConfirm]     = useState('')
   const [error,       setError]       = useState<string | null>(null)
   const [busy,        setBusy]        = useState(false)
+
+  // Guard against direct navigation to /setup when setup is already done.
+  // Placed AFTER all hooks so the hook order is identical on every render:
+  // returning before the useState calls above makes React count fewer hooks
+  // the moment `user` gets set on success ("rendered fewer hooks than expected").
+  if (user)            return <Navigate to="/" replace />
+  if (!setupRequired)  return <Navigate to="/login" replace />
 
   const valid =
     /^[a-z0-9][a-z0-9._-]{1,31}$/i.test(username) &&
