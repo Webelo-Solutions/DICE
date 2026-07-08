@@ -19,7 +19,7 @@ installer/version.iss
 # ── DICE runtime data (NEVER commit) ──────────────────────────────────────────
 # SQLite database + WAL/shared-memory sidecars. Holds rosters, sessions, history,
 # rooms, and imported content packs — local data, not source.
-data/
+/data/
 *.db
 *.db-wal
 *.db-shm
