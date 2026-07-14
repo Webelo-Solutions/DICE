@@ -16,7 +16,9 @@ import { Lobby }            from './pages/Lobby'
 import { RoomPlayer }       from './pages/RoomPlayer'
 import { Setup }            from './pages/Setup'
 import { Login }            from './pages/Login'
+import { Register }         from './pages/Register'
 import { AdminUsers }       from './pages/AdminUsers'
+import { AdminAnalytics }   from './pages/AdminAnalytics'
 import { Account }          from './pages/Account'
 import { RoomAutoNav }      from './components/RoomAutoNav'
 import { UserChip }         from './components/UserChip'
@@ -95,6 +97,7 @@ export function App() {
       {/* Unprotected — visible without a session */}
       <Route path="/setup" element={<Setup />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
 
       {/* Everything else is gated by RequireAuth (auth + setupRequired checks) */}
       <Route element={<RequireAuth />}>
@@ -115,6 +118,7 @@ export function App() {
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/account"     element={<Account />} />
         <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
+        <Route path="/admin/analytics" element={<RequireAdmin><AdminAnalytics /></RequireAdmin>} />
         <Route path="*"          element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

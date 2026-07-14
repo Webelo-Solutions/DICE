@@ -19,6 +19,10 @@ export interface DMStateChanges {
   scenarioClockDeltaMinutes: number
   actChange:                 number | null
   npcUpdates:                DMNPCUpdate[]
+  // Set when this turn's narration resolves the incident — 'victory' if the
+  // scenario's victoryCondition was met, 'defeat' if failureCondition was met
+  // or the attacker completed their kill chain. null while still ongoing.
+  sessionOutcome:            'victory' | 'defeat' | null
 }
 
 export interface DMMechanicalOutcome {
@@ -58,6 +62,11 @@ export interface DMRequestPayload {
     failureCondition:            string
     actSeed:                     string
     bossEvent:                   string | null
+    // Real-world pacing, independent of the in-fiction scenarioClock — lets
+    // the DM see whether the table is running long against the scenario's
+    // advertised playtime and adjust narration pace accordingly.
+    estimatedMinutes:            number
+    realElapsedMinutes:          number
   }
   players: {
     id:     string

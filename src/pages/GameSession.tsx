@@ -104,8 +104,11 @@ export function GameSession() {
   }, [session?.id])
 
   // ── Watch for end condition ───────────────────────────────────────────────
+  // 'timeout' = the engine's hard real-time backstop force-concluded the
+  // session (see gameStore.ts applyDMResponse) — reads as a 'partial' result,
+  // not a loss, since the team may well have been on track.
   useEffect(() => {
-    if (session?.status === 'defeat' || session?.status === 'victory') {
+    if (session?.status === 'defeat' || session?.status === 'victory' || session?.status === 'timeout') {
       const hintsUsed     = feed.filter((e) => e.type === 'hint').length
       const timerExpiries = feed.filter((e) => e.type === 'system' && e.speaker === 'TIMER').length
       const critHits      = feed.filter((e) => e.outcome === 'critical_hit').length
@@ -119,9 +122,11 @@ export function GameSession() {
         .filter((e) => e.type === 'roll_result' && e.outcome)
         .reduce((sum, e) => sum + (OUTCOME_XP[e.outcome!] ?? 0), 0)
 
+      const outcome = session.status === 'victory' ? 'victory' : session.status === 'timeout' ? 'partial' : 'defeat'
+
       endSession({
-        outcome:            session.status === 'victory' ? 'victory' : 'defeat',
-        xpAwarded:          Math.max(xpAwarded, session.status === 'victory' ? 50 : 20),
+        outcome,
+        xpAwarded:          Math.max(xpAwarded, outcome === 'victory' ? 50 : 20),
         criticalHits:       critHits,
         criticalFails:      critFails,
         injectsSurvived:    feed.filter((e) => e.type === 'inject').length,

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+import { networkInterfaces } from 'node:os'
 import { repository } from './db/sqlite-repository'
 import type { Character } from '../src/types/game'
 import type { Campaign, CustomScenario, SaveSlot } from '../src/types/campaign'
@@ -7,6 +8,8 @@ import type { OrgState } from '../src/types/orgState'
 import type { OrgProfile } from '../src/types/orgProfile'
 import { validateDicepack } from '../src/content/dicepackSchema'
 import type { ContentPackRow } from './db/repository'
+import { renderSessionReportPdf } from './reports/sessionReportPdf'
+import { toCsv } from './reports/csv'
 
 interface IdParam { id: string }
 interface KeyParam { key: string }
@@ -34,6 +37,18 @@ function packSummary(row: ContentPackRow) {
 // URL. /api/health stays unauthenticated for uptime probes.
 export async function apiRoutes(app: FastifyInstance) {
   app.get('/health', async () => ({ status: 'ok' }))
+
+  // Unauthenticated, like /health — lets the Lobby build a shareable join link
+  // (link + QR) without the facilitator having to run `ipconfig` themselves.
+  // Only surfaces non-internal IPv4s; a host on multiple networks (e.g. Wi-Fi +
+  // a VPN adapter) gets every candidate back and the client picks the first.
+  app.get('/network-info', async () => ({
+    port: Number(process.env.PORT ?? 3001),
+    addresses: Object.values(networkInterfaces())
+      .flatMap((iface) => iface ?? [])
+      .filter((i) => i.family === 'IPv4' && !i.internal)
+      .map((i) => i.address),
+  }))
 
   // Bundled preHandler — short-circuits with 401 if no valid session.
   const auth = { preHandler: app.requireAuth }
@@ -123,6 +138,49 @@ export async function apiRoutes(app: FastifyInstance) {
   app.delete('/session-history', auth, async (req) => {
     repository.clearSessionHistory(uid(req))
     return { cleared: true }
+  })
+
+  // Single-record report/export — scoped to the record's own owner, OR an
+  // admin (so admins can pull any team member's report for compliance
+  // evidence without needing that member's credentials).
+  const canReadRecord = (req: { user: { id: string; role: string } | null }, ownerUserId: string | null) =>
+    ownerUserId === req.user!.id || req.user!.role === 'admin'
+
+  app.get<{ Params: IdParam }>('/session-history/:id/report.pdf', auth, async (req, reply) => {
+    const record = repository.getSessionHistoryById(req.params.id)
+    if (!record) return reply.code(404).send({ error: 'session record not found' })
+    if (!canReadRecord(req, record.ownerUserId)) return reply.code(403).send({ error: 'not your session record' })
+    const owner = record.ownerUserId ? repository.getUserById(record.ownerUserId) : null
+    const pdf = await renderSessionReportPdf(record, owner?.displayName ?? 'Unknown user')
+    reply.type('application/pdf')
+    reply.header('Content-Disposition', `attachment; filename="DICE-Report-${record.scenarioId}-${record.id.slice(0, 8)}.pdf"`)
+    return reply.send(pdf)
+  })
+
+  app.get<{ Params: IdParam }>('/session-history/:id/export.json', auth, async (req, reply) => {
+    const record = repository.getSessionHistoryById(req.params.id)
+    if (!record) return reply.code(404).send({ error: 'session record not found' })
+    if (!canReadRecord(req, record.ownerUserId)) return reply.code(403).send({ error: 'not your session record' })
+    reply.type('application/json')
+    reply.header('Content-Disposition', `attachment; filename="DICE-Session-${record.scenarioId}-${record.id.slice(0, 8)}.json"`)
+    return reply.send(JSON.stringify(record, null, 2))
+  })
+
+  // Bulk CSV of the caller's OWN session history (summary rows, one per
+  // session) — for feeding into a spreadsheet, GRC tool, or ticketing system.
+  app.get('/session-history/export.csv', auth, async (req, reply) => {
+    const records = repository.listSessionHistory(uid(req))
+    const csv = toCsv(
+      ['id', 'scenarioId', 'scenarioTitle', 'difficulty', 'outcome', 'playerCount', 'players', 'roundsPlayed', 'xpAwarded', 'criticalHits', 'criticalFails', 'playedAt'],
+      records.map((r) => [
+        r.id, r.scenarioId, r.scenarioTitle, r.difficulty, r.outcome, r.playerCount,
+        r.players.map((p) => p.name).join('; '), r.result.roundsPlayed, r.result.xpAwarded,
+        r.result.criticalHits, r.result.criticalFails, new Date(r.playedAt).toISOString(),
+      ]),
+    )
+    reply.type('text/csv')
+    reply.header('Content-Disposition', 'attachment; filename="DICE-Session-History.csv"')
+    return reply.send(csv)
   })
 
   // ── Org state / profile — install-wide ──────────────────

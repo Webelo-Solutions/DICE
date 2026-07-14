@@ -26,6 +26,10 @@ export function AdminUsers() {
   }
   useEffect(() => { load() }, [])
 
+  // Self-service registration invite code (null = registration disabled).
+  const [registrationCode, setRegistrationCode] = useState<string | null | undefined>(undefined)
+  useEffect(() => { apiAdmin.getRegistrationCode().then((r) => setRegistrationCode(r.code)).catch(() => setRegistrationCode(null)) }, [])
+
   const flash = (kind: 'success' | 'error', text: string) => {
     setMsg({ kind, text })
     setTimeout(() => setMsg((m) => (m?.text === text ? null : m)), 4000)
@@ -70,14 +74,24 @@ export function AdminUsers() {
               Create, disable, reset passwords, and revoke sessions for users on this DICE install.
             </p>
           </div>
-          <button
-            onClick={() => setCreateOpen(true)}
-            className="px-3 py-1.5 text-xs font-semibold tracking-widest uppercase
-              bg-terminal-green/10 border border-terminal-green/40 text-terminal-green
-              hover:bg-terminal-green/20 hover:border-terminal-green rounded transition-all"
-          >
-            + New User
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate('/admin/analytics')}
+              className="px-3 py-1.5 text-xs font-semibold tracking-widest uppercase
+                border border-terminal-blue/40 text-terminal-blue
+                hover:bg-terminal-blue/10 hover:border-terminal-blue rounded transition-all"
+            >
+              📊 Program Analytics
+            </button>
+            <button
+              onClick={() => setCreateOpen(true)}
+              className="px-3 py-1.5 text-xs font-semibold tracking-widest uppercase
+                bg-terminal-green/10 border border-terminal-green/40 text-terminal-green
+                hover:bg-terminal-green/20 hover:border-terminal-green rounded transition-all"
+            >
+              + New User
+            </button>
+          </div>
         </div>
 
         {msg && (
@@ -86,6 +100,14 @@ export function AdminUsers() {
             : 'border-terminal-red/40 bg-terminal-red/10 text-terminal-red'}`}>
             {msg.text}
           </div>
+        )}
+
+        {registrationCode !== undefined && (
+          <RegistrationCodeCard
+            code={registrationCode}
+            onSaved={(code) => { setRegistrationCode(code); flash('success', code ? 'Self-registration enabled' : 'Self-registration disabled') }}
+            onError={(text) => flash('error', text)}
+          />
         )}
 
         <div className="rounded border border-terminal-border bg-terminal-surface/60 overflow-hidden">
@@ -167,6 +189,67 @@ export function AdminUsers() {
 
       {createOpen && <CreateUserModal onClose={() => setCreateOpen(false)} onCreated={(text) => { flash('success', text); load() }} onError={(text) => flash('error', text)} />}
       {resetFor && <ResetPasswordModal user={resetFor} onClose={() => setResetFor(null)} onDone={(text) => { flash('success', text); setResetFor(null) }} onError={(text) => flash('error', text)} />}
+    </div>
+  )
+}
+
+// ── Self-service registration invite code ───────────────────────────────────
+// Anyone with the code can create their own 'player' account at /register — no
+// code set means that page 403s. Off by default; an admin opts in here.
+function RegistrationCodeCard({ code, onSaved, onError }:
+  { code: string | null; onSaved: (code: string | null) => void; onError: (text: string) => void }) {
+  const [draft, setDraft] = useState(code ?? '')
+  const [busy,  setBusy]  = useState(false)
+
+  const save = async () => {
+    setBusy(true)
+    try { onSaved((await apiAdmin.setRegistrationCode(draft.trim() || null)).code) }
+    catch (e) { onError((e as Error).message) }
+    finally { setBusy(false) }
+  }
+  const disable = async () => {
+    setBusy(true)
+    try { onSaved((await apiAdmin.setRegistrationCode(null)).code); setDraft('') }
+    catch (e) { onError((e as Error).message) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="rounded border border-terminal-border bg-terminal-surface/60 p-4">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-bold text-terminal-green tracking-widest uppercase">Self-Service Registration</span>
+        <span className={`text-[10px] px-2 py-0.5 rounded border ${code
+          ? 'border-terminal-green/40 bg-terminal-green/10 text-terminal-green'
+          : 'border-terminal-dim/30 text-terminal-dim'}`}>
+          {code ? 'enabled' : 'disabled'}
+        </span>
+      </div>
+      <p className="text-[11px] text-terminal-dim leading-relaxed mb-3">
+        Set an invite code and anyone who has it can create their own account at <code className="text-terminal-dim/80">/register</code> — always
+        as a <code className="text-terminal-dim/80">player</code>, never admin. Clear the code to turn self-registration back off.
+      </p>
+      <div className="flex gap-2">
+        <input
+          value={draft} onChange={(e) => setDraft(e.target.value)}
+          placeholder="e.g. summer-cohort-24" autoComplete="off"
+          className="flex-1 bg-terminal-bg border border-terminal-border focus:border-terminal-blue
+            text-white px-3 py-2 rounded focus:outline-none text-sm placeholder-terminal-dim/50"
+        />
+        <button onClick={save} disabled={busy || draft.trim().length < 4}
+          className="px-3 py-1.5 text-xs font-semibold tracking-widest uppercase
+            bg-terminal-green/10 border border-terminal-green/40 text-terminal-green
+            hover:bg-terminal-green/20 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-all">
+          Save
+        </button>
+        {code && (
+          <button onClick={disable} disabled={busy}
+            className="px-3 py-1.5 text-xs font-semibold tracking-widest uppercase
+              border border-terminal-red/30 text-terminal-red/80
+              hover:border-terminal-red hover:text-terminal-red disabled:opacity-30 rounded transition-all">
+            Disable
+          </button>
+        )}
+      </div>
     </div>
   )
 }

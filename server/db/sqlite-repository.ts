@@ -215,6 +215,14 @@ export class SqliteRepository implements DiceRepository {
     // Each user can only clear their own history.
     this.db.delete(sessionHistory).where(eq(sessionHistory.ownerUserId, userId)).run()
   }
+  listAllSessionHistory(): Array<SessionRecord & { ownerUserId: string | null }> {
+    return this.db.select().from(sessionHistory).all()
+      .map((r) => ({ ...(r.data as SessionRecord), ownerUserId: r.ownerUserId }))
+  }
+  getSessionHistoryById(id: string): (SessionRecord & { ownerUserId: string | null }) | null {
+    const row = this.db.select().from(sessionHistory).where(eq(sessionHistory.id, id)).get()
+    return row ? { ...(row.data as SessionRecord), ownerUserId: row.ownerUserId } : null
+  }
 
   // ── Singletons / live state ─────────────────────────────
   getOrgState(): OrgState | null {

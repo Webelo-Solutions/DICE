@@ -42,6 +42,29 @@ const post  = <T>(path: string, body: unknown) => req<T>(path, { method: 'POST',
 const patch = <T>(path: string, body: unknown) => req<T>(path, { method: 'PATCH', body: JSON.stringify(body) })
 const del   = (path: string) => req<unknown>(path, { method: 'DELETE' })
 
+// Triggers a browser download for an authenticated file endpoint (PDF/JSON/CSV
+// exports). A plain `<a href>` can't carry the bearer token, so this fetches
+// as a blob and saves it via a temporary object URL. Exported for reuse by
+// src/api/admin.ts (the admin analytics CSV export lives under /admin, not
+// under BASE's other endpoints, but needs the same authenticated-download
+// mechanics).
+export async function downloadFile(path: string, fallbackFilename: string): Promise<void> {
+  const token = useUserStore.getState().token
+  const res = await fetch(BASE + path, { headers: token ? { authorization: `Bearer ${token}` } : {} })
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    throw new Error(`Download failed: ${res.status} ${detail}`)
+  }
+  const blob = await res.blob()
+  const match = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')
+  const filename = match ? match[1] : fallbackFilename
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename
+  document.body.appendChild(a); a.click(); a.remove()
+  URL.revokeObjectURL(url)
+}
+
 export const api = {
   // ── Roster ──
   listCharacters:   () => req<Character[]>('/characters'),
@@ -86,6 +109,9 @@ export const api = {
   listSessionHistory: () => req<SessionRecord[]>('/session-history'),
   recordSession:      (r: SessionRecord) => post<SessionRecord>('/session-history', r),
   clearSessionHistory: () => del('/session-history'),
+  downloadSessionReport: (id: string) => downloadFile(`/session-history/${encodeURIComponent(id)}/report.pdf`, 'DICE-Report.pdf'),
+  downloadSessionJson:   (id: string) => downloadFile(`/session-history/${encodeURIComponent(id)}/export.json`, 'DICE-Session.json'),
+  downloadSessionHistoryCsv: () => downloadFile('/session-history/export.csv', 'DICE-Session-History.csv'),
 
   // ── Org state / profile ──
   getOrgState:  () => req<OrgState | null>('/org-state'),

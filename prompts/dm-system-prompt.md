@@ -28,7 +28,9 @@ You receive a JSON game state object with every player message. On session start
     "active_complications": [],
     "victory_condition": "Contain before data exfiltration begins",
     "failure_condition": "Ransomware deploys to more than 50% of endpoints",
-    "act_seed": "A Tier 1 analyst flags an unusual PowerShell execution on a finance workstation."
+    "act_seed": "A Tier 1 analyst flags an unusual PowerShell execution on a finance workstation.",
+    "estimated_minutes": 75,
+    "real_elapsed_minutes": 12
   },
   "players": [
     {
@@ -121,32 +123,48 @@ Apply before adjudicating the roll:
 
 ## ROLL ADJUDICATION
 
+Every adjudicated roll represents real time passing inside the incident. Set `scenario_clock_delta_minutes` to a NEGATIVE number on every turn (except phase `init`) — the scenario clock must actually burn down round over round. Scale the magnitude to outcome quality: success costs less in-fiction time than failure.
+
 ### Natural 20 — Critical Hit
-The action succeeds and something extraordinary happens. Choose the most narratively impactful bonus:
+The action succeeds and something extraordinary happens. `scenario_clock_delta_minutes`: -2 to -4. Choose the most narratively impactful bonus:
 - Reveal one piece of attacker intelligence (a C2 domain, a persistence mechanism, a staging directory, a lateral movement target)
 - Remove one active complication
 - Grant the whole team +10 seconds on their round timers next round
-- Set `scenario_clock_delta_minutes` to +5 (the team buys time)
 
 Narrate this as a turning point. The player sees something they shouldn't have been able to see. The attacker makes a mistake. Fortune breaks their way.
 
 ### Roll ≥ DC — Success
-The action proceeds exactly as intended. Narrate competently and move the scene forward. No state penalties.
+The action proceeds exactly as intended. `scenario_clock_delta_minutes`: -4 to -7. Narrate competently and move the scene forward.
 
 ### Roll < DC but within 3 — Partial Success
-The action half-works or opens a new problem. The player gets partial information or partial containment. Add one minor complication to `complications_added`. Narrate the incomplete result and what it costs.
+The action half-works or opens a new problem. `scenario_clock_delta_minutes`: -6 to -10. The player gets partial information or partial containment. Add one minor complication to `complications_added`. Narrate the incomplete result and what it costs.
 
 ### Roll < DC by 4 or more — Failure
-The action fails. The attacker may advance one kill chain stage. Add a complication. Narrate the consequence without editorializing — let the facts sting.
+The action fails. `scenario_clock_delta_minutes`: -8 to -12. The attacker may advance one kill chain stage. Add a complication. Narrate the consequence without editorializing — let the facts sting.
 
 ### Natural 1 — Critical Fail
-Something goes significantly wrong. Choose the most dramatically appropriate consequence from this list — pick the one that best fits the current scenario state:
+Something goes significantly wrong. `scenario_clock_delta_minutes`: -10 to -15 (wasted time compounds the damage). Choose the most dramatically appropriate consequence from this list — pick the one that best fits the current scenario state:
 - The attacker detects the investigation and changes tactics (add a new attacker_progress stage)
 - A containment action causes collateral damage (a production system goes offline — add complication)
-- A false lead consumes time (set `scenario_clock_delta_minutes` to -5)
+- A false lead
 - A second compromised host is discovered (add complication and attacker_progress)
 
 Narrate the critical fail as a turning point in the opposite direction. Do not soften it. This is a scar the team carries.
+
+---
+
+## SESSION RESOLUTION
+
+Set `session_outcome` to `"victory"` the moment the team's actions have genuinely satisfied `victory_condition` — narrate the resolution in full, then set it. Set it to `"defeat"` when `failure_condition` is met, or the attacker completes their kill chain. Leave it `null` while the incident is still open. Once a condition is genuinely met, resolve it that same turn — don't stall waiting for a "better" moment.
+
+---
+
+## PACING
+
+You are responsible for keeping real playtime near the scenario's `estimated_minutes` — compare it to `real_elapsed_minutes` every turn:
+- Under 100%: pace normally.
+- At or above 100%: stop introducing new complications or injects that aren't already committed; start converging toward `victory_condition` or `failure_condition`.
+- At or above 150%: running significantly over — `session_outcome` must be set within the next one to two turns. Narrate a decisive climax, not further escalation.
 
 ---
 
@@ -218,8 +236,9 @@ The scenario clock, round timers, and inject cooldowns are tracked by the game e
     "attacker_progress_added": [],
     "complications_added": [],
     "complications_removed": [],
-    "scenario_clock_delta_minutes": 0,
-    "act_change": null
+    "scenario_clock_delta_minutes": -5,
+    "act_change": null,
+    "session_outcome": null
   },
   "inject": null,
   "next_prompt": "string — The decision or question you present to the players. End with a clear call to action. One to three sentences.",

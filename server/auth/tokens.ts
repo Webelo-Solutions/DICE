@@ -1,5 +1,15 @@
 import { randomBytes, createHash, scryptSync, timingSafeEqual } from 'node:crypto'
 
+// Shared username/password format rules — used by first-run setup, admin user
+// creation, and self-service registration alike.
+export const USERNAME_RE = /^[a-z0-9][a-z0-9._-]{1,31}$/i
+export const MIN_PW_LEN  = 8
+export const MAX_PW_LEN  = 256
+
+// kv_state key gating self-service registration. Absent/null = disabled (the
+// default — an install must opt in by having an admin set a code).
+export const REGISTRATION_CODE_KEY = 'registrationInviteCode'
+
 // Bearer tokens: random, opaque. Only the SHA-256 hash is stored server-side;
 // the lookup of that hash IS the validation, so there is no signing secret to
 // manage. Tokens are URL-safe so they travel cleanly in an Authorization header.

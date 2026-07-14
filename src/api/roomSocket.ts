@@ -30,6 +30,14 @@ interface ServerMessage {
 }
 
 export function connectRoom(code: string, token: string): void {
+  // connectRoom is called more than once per session by design (e.g. Join/HostGame
+  // connect immediately, then Lobby's mount effect connects again) — tear down any
+  // existing socket first so the old one doesn't keep running with a stale onclose
+  // (which would otherwise fire later, sharing the module-level state below with
+  // the new connection, and could trigger a spurious extra reconnect).
+  if (reconnectTimer) clearTimeout(reconnectTimer)
+  if (socket) { socket.onclose = null; socket.close() }
+
   intentionalClose = false
   facilitatorAppliedSnapshot = false
   // Reuse the page's scheme/host so this works behind the Vite dev proxy and in

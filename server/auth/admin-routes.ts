@@ -7,13 +7,23 @@
 import type { FastifyInstance } from 'fastify'
 import { randomUUID } from 'node:crypto'
 import { repository } from '../db/sqlite-repository'
-import { hashPassphrase } from './tokens'
+import { hashPassphrase, USERNAME_RE, MIN_PW_LEN, MAX_PW_LEN, REGISTRATION_CODE_KEY } from './tokens'
 import type { UserRow } from '../db/repository'
+import { toCsv } from '../reports/csv'
 
-const USERNAME_RE = /^[a-z0-9][a-z0-9._-]{1,31}$/i
-const MIN_PW_LEN  = 8
-const MAX_PW_LEN  = 256
 const VALID_ROLES = new Set(['admin', 'player'])
+const MIN_CODE_LEN = 4
+const MAX_CODE_LEN = 64
+
+// Compliance-cadence: how often the program expects each user to run an
+// exercise. Stored install-wide in kv_state, like the registration code.
+// Default 90 days (quarterly) — a common baseline for periodic IR testing
+// requirements (PCI-DSS, SOC 2, ISO 27001, NIST CSF all expect *some* cadence,
+// though none of them mandate this specific number).
+const CADENCE_DAYS_KEY = 'exerciseCadenceDays'
+const DEFAULT_CADENCE_DAYS = 90
+const MIN_CADENCE_DAYS = 1
+const MAX_CADENCE_DAYS = 3650
 
 // Sanitized projection for any admin response — strips the password hash.
 function userPublic(u: UserRow) {
@@ -32,6 +42,7 @@ interface IdParam { id: string }
 interface CreateUserBody { username?: string; displayName?: string; password?: string; role?: string }
 interface UpdateUserBody { displayName?: string; role?: string; active?: boolean }
 interface PasswordBody   { password?: string }
+interface RegistrationCodeBody { code?: string | null }
 
 export async function adminRoutes(app: FastifyInstance) {
   const admin = { preHandler: app.requireAdmin }
@@ -134,5 +145,63 @@ export async function adminRoutes(app: FastifyInstance) {
     if (!target) return reply.code(404).send({ error: 'user not found' })
     repository.deleteAuthSessionsForUser(target.id)
     return { ok: true }
+  })
+
+  // ── Self-service registration invite code ───────────────────────────────
+  // Gates POST /auth/register (routes.ts). No code set = registration disabled
+  // (the default). The code is a shared secret handed to a whole cohort, not a
+  // per-person credential, so it's stored as plain text (in kv_state) and
+  // re-readable here — unlike a password hash, the admin needs to be able to
+  // see it again to re-share it.
+  app.get('/admin/registration-code', admin, async () => {
+    return { code: repository.getKv<string>(REGISTRATION_CODE_KEY) }
+  })
+  app.put<{ Body: RegistrationCodeBody }>('/admin/registration-code', admin, async (req, reply) => {
+    const code = req.body?.code
+    if (code === null || code === undefined || code === '') {
+      repository.deleteKv(REGISTRATION_CODE_KEY)
+      return { code: null }
+    }
+    if (code.length < MIN_CODE_LEN || code.length > MAX_CODE_LEN) {
+      return reply.code(400).send({ error: `invite code must be ${MIN_CODE_LEN}–${MAX_CODE_LEN} characters` })
+    }
+    repository.setKv(REGISTRATION_CODE_KEY, code)
+    return { code }
+  })
+
+  // ── Program-wide analytics ───────────────────────────────────────────────
+  // Every user's session history, plus the configured exercise cadence — the
+  // client reuses the same aggregation utilities (gapAnalysis.ts) that the
+  // per-user Analytics page uses, just over the combined record set.
+  app.get('/admin/analytics', admin, async () => {
+    const cadenceDays = repository.getKv<number>(CADENCE_DAYS_KEY) ?? DEFAULT_CADENCE_DAYS
+    return { sessions: repository.listAllSessionHistory(), cadenceDays }
+  })
+
+  app.put<{ Body: { cadenceDays?: number } }>('/admin/analytics/cadence-days', admin, async (req, reply) => {
+    const days = req.body?.cadenceDays
+    if (typeof days !== 'number' || !Number.isInteger(days) || days < MIN_CADENCE_DAYS || days > MAX_CADENCE_DAYS) {
+      return reply.code(400).send({ error: `cadenceDays must be an integer between ${MIN_CADENCE_DAYS} and ${MAX_CADENCE_DAYS}` })
+    }
+    repository.setKv(CADENCE_DAYS_KEY, days)
+    return { cadenceDays: days }
+  })
+
+  // Bulk CSV across EVERY user on the install — the compliance/GRC export.
+  app.get('/admin/analytics/export.csv', admin, async (req, reply) => {
+    const sessions = repository.listAllSessionHistory()
+    const users    = new Map(repository.listUsers().map((u) => [u.id, u]))
+    const csv = toCsv(
+      ['id', 'user', 'scenarioId', 'scenarioTitle', 'difficulty', 'outcome', 'playerCount', 'players', 'roundsPlayed', 'xpAwarded', 'criticalHits', 'criticalFails', 'playedAt'],
+      sessions.map((r) => [
+        r.id, r.ownerUserId ? (users.get(r.ownerUserId)?.username ?? r.ownerUserId) : 'unknown',
+        r.scenarioId, r.scenarioTitle, r.difficulty, r.outcome, r.playerCount,
+        r.players.map((p) => p.name).join('; '), r.result.roundsPlayed, r.result.xpAwarded,
+        r.result.criticalHits, r.result.criticalFails, new Date(r.playedAt).toISOString(),
+      ]),
+    )
+    reply.type('text/csv')
+    reply.header('Content-Disposition', 'attachment; filename="DICE-Program-Session-History.csv"')
+    return reply.send(csv)
   })
 }

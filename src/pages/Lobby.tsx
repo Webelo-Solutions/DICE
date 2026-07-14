@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import QRCode from 'qrcode'
 import { useRoomStore } from '../store/roomStore'
 import { useGameStore } from '../store/gameStore'
 import { connectRoom, disconnectRoom } from '../api/roomSocket'
+import { roomApi } from '../api/rooms'
 import { ProviderSettingsModal } from '../components/ProviderSettingsModal'
 
 export function Lobby() {
@@ -13,6 +15,10 @@ export function Lobby() {
   const providerConfig = useGameStore((s) => s.providerConfig)
   const hasProvider = !!providerConfig?.apiKey
   const [providerOpen, setProviderOpen] = useState(false)
+  const [port, setPort] = useState<number | null>(null)
+  const [addresses, setAddresses] = useState<string[]>([])
+  const [selectedAddress, setSelectedAddress] = useState<string | null>(null)
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
 
   // No membership (e.g. direct navigation or after leaving) → back to home.
   useEffect(() => {
@@ -20,6 +26,33 @@ export function Lobby() {
     connectRoom(membership.code, membership.token)
     // Keep the connection alive across the session; disconnect only on Leave.
   }, [membership?.code])
+
+  // Facilitator only: resolve the host's LAN address(es) so players can scan a QR
+  // instead of the facilitator reading an IP off `ipconfig` and reciting it. A
+  // host machine often reports more than one candidate (real LAN NIC alongside
+  // VPN/WSL/hypervisor virtual adapters) with no reliable "the right one" order,
+  // so default to the first but let the facilitator switch if it's wrong.
+  useEffect(() => {
+    if (!membership || membership.role !== 'facilitator') return
+    let cancelled = false
+    roomApi.getNetworkInfo().then(({ port, addresses }) => {
+      if (cancelled) return
+      setPort(port); setAddresses(addresses)
+      setSelectedAddress(addresses[0] ?? null)
+    }).catch(() => { /* no LAN-facing address available — fall back to the code-only view */ })
+    return () => { cancelled = true }
+  }, [membership?.code, membership?.role])
+
+  const joinUrl = selectedAddress && port && membership
+    ? `http://${selectedAddress}:${port}/join?code=${membership.code}`
+    : null
+
+  useEffect(() => {
+    if (!joinUrl) { setQrDataUrl(null); return }
+    let cancelled = false
+    QRCode.toDataURL(joinUrl, { margin: 1, width: 176 }).then((dataUrl) => { if (!cancelled) setQrDataUrl(dataUrl) })
+    return () => { cancelled = true }
+  }, [joinUrl])
 
   if (!membership) return null
 
@@ -46,6 +79,23 @@ export function Lobby() {
           <div className="text-[10px] text-terminal-dim tracking-widest uppercase mb-2">Room Code — share to invite players</div>
           <div className="text-4xl font-bold text-terminal-green tracking-[0.4em] select-all">{membership.code}</div>
           <div className="text-[10px] text-terminal-dim/70 mt-3">Players on this local network join with this code · trusted networks only</div>
+
+          {isFacilitator && qrDataUrl && joinUrl && (
+            <div className="mt-4 pt-4 border-t border-terminal-green/20 flex flex-col items-center gap-2">
+              <img src={qrDataUrl} alt="Scan to join" width={110} height={110} className="rounded bg-white p-1.5" />
+              <div className="text-[10px] text-terminal-dim/70">Scan, or open</div>
+              <div className="text-xs text-terminal-green select-all break-all">{joinUrl}</div>
+              {addresses.length > 1 && (
+                <label className="text-[10px] text-terminal-dim/70 flex items-center gap-1.5 mt-1">
+                  Wrong network?
+                  <select value={selectedAddress ?? ''} onChange={(e) => setSelectedAddress(e.target.value)}
+                    className="bg-terminal-surface border border-terminal-border rounded px-1.5 py-0.5 text-terminal-green">
+                    {addresses.map((a) => <option key={a} value={a}>{a}</option>)}
+                  </select>
+                </label>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Participant list (live via WebSocket) */}

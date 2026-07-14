@@ -203,6 +203,7 @@ export function SessionEnd() {
       result,
       learningPath,
       playedAt:      result.endedAt,
+      feed,
     })
 
     applySessionToOrg(session, result)

@@ -26,6 +26,8 @@ export function buildPayload(
       failureCondition:             session.scenario.failureCondition,
       actSeed:                      currentAct?.seed ?? '',
       bossEvent:                    currentAct?.bossEvent ?? null,
+      estimatedMinutes:             session.scenario.estimatedMinutes,
+      realElapsedMinutes:           Math.round((Date.now() - session.startedAt) / 60000),
     },
     players: session.players.map((p) => ({
       id:     p.id,
@@ -105,6 +107,7 @@ export function parseDMResponse(raw: string): DMResponse {
       scenarioClockDeltaMinutes: sc.scenarioClockDeltaMinutes ?? sc.scenario_clock_delta_minutes ?? 0,
       actChange:                 sc.actChange                 ?? sc.act_change                  ?? null,
       npcUpdates:                sc.npcUpdates                ?? sc.npc_updates                 ?? [],
+      sessionOutcome:            sc.sessionOutcome             ?? sc.session_outcome              ?? null,
     },
     inject:     parsed.inject     ?? null,
     nextPrompt: parsed.nextPrompt ?? parsed.next_prompt ?? '',

@@ -1,4 +1,4 @@
-import type { SessionResult, LearningPathItem, LearningPriority } from './game'
+import type { SessionResult, LearningPathItem, LearningPriority, FeedEntry } from './game'
 
 export interface SessionRecord {
   id:            string
@@ -11,6 +11,10 @@ export interface SessionRecord {
   result:        SessionResult
   learningPath:  LearningPathItem[]
   playedAt:      number   // Unix ms — result.endedAt
+  // Full narrative transcript at the moment the session ended — persisted so
+  // after-action reports and exports can include the timeline later, not just
+  // the summary. Optional: records written before this field existed have none.
+  feed?:         FeedEntry[]
 }
 
 export interface GapFrequency {

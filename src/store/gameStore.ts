@@ -240,8 +240,24 @@ export const useGameStore = create<GameStore>()(
         const newClock = Math.max(0, s.scenarioClockRemaining + sc.scenarioClockDeltaMinutes)
         const newAct   = sc.actChange ?? s.act
 
+        // Resolution priority: a completed kill chain is an absolute mechanical
+        // defeat (overrides anything the DM says); otherwise trust the DM's own
+        // sessionOutcome call (new — see dmPrompt.ts SESSION RESOLUTION); otherwise
+        // stay as-is. Kill-chain check stays as a safety net even now that the DM
+        // can self-report defeat, in case it misses the mechanical trigger.
         const failStage = s.scenario.killChainStages[s.scenario.killChainStages.length - 1]
-        const status    = newProgress.includes(failStage) ? 'defeat' : s.status
+        const narrativeStatus = newProgress.includes(failStage) ? 'defeat' : (sc.sessionOutcome ?? s.status)
+
+        // Hard backstop, independent of the DM: if a session has run well past
+        // its advertised estimatedMinutes in real wall-clock time and still
+        // hasn't concluded on its own, force it to a close rather than let it
+        // run indefinitely. 'timeout' reads as a 'partial' result, not a loss —
+        // see GameSession.tsx's end-condition watcher.
+        const HARD_TIMEOUT_MULTIPLIER = 2
+        const elapsedMinutes = (Date.now() - s.startedAt) / 60000
+        const status = narrativeStatus === 'active' && elapsedMinutes >= s.scenario.estimatedMinutes * HARD_TIMEOUT_MULTIPLIER
+          ? 'timeout'
+          : narrativeStatus
 
         // Reset insider_threat firstActionThisAct on act transition
         const adversary = s.adversary && sc.actChange !== null
@@ -336,7 +352,10 @@ export const useGameStore = create<GameStore>()(
             roster: s.roster.map((c) =>
               playerIds.has(c.id) ? { ...c, xp: c.xp + xpEach } : c
             ),
-            session: { ...s.session, status: result.outcome === 'defeat' ? 'defeat' : 'victory' },
+            // session.status is already terminal ('victory' | 'defeat' | 'timeout')
+            // by the time endSession runs — it's what triggered the call. Don't
+            // re-derive it here; a two-way outcome->status ternary can't represent
+            // 'partial' (timeout) without collapsing it into 'victory'.
           }
         }),
 

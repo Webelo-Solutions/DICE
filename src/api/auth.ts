@@ -49,6 +49,8 @@ export const apiAuth = {
     call<{ token: string; user: AuthUserPublic }>('/setup', 'POST', body),
   login: (body: { username: string; password: string }) =>
     call<{ token: string; user: AuthUserPublic }>('/login', 'POST', body),
+  register: (body: { username: string; displayName: string; password: string; inviteCode: string }) =>
+    call<{ token: string; user: AuthUserPublic }>('/register', 'POST', body),
   logout: (token: string) => call<{ ok: boolean }>('/logout', 'POST', undefined, token),
   changePassword: (token: string, body: { currentPassword: string; newPassword: string }) =>
     call<{ ok: boolean }>('/change-password', 'POST', body, token),

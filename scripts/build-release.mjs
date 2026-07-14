@@ -29,6 +29,8 @@ const PROD_DEPS = {
   'fastify': '^5.8.5',
   // Runtime validation of imported content packs (server-side import endpoint).
   'zod': '^3.25.76',
+  // After-action report PDF generation (server/reports/sessionReportPdf.ts).
+  'pdfkit': '^0.18.0',
   // LLM SDKs — the DM now runs server-side (M4).
   '@anthropic-ai/sdk': '^0.39.0',
   'openai': '^6.38.0',

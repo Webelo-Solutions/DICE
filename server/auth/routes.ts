@@ -8,7 +8,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { randomUUID } from 'node:crypto'
 import { repository } from '../db/sqlite-repository'
-import { hashPassphrase, verifyPassphrase, newToken, hashToken } from './tokens'
+import { hashPassphrase, verifyPassphrase, newToken, hashToken, USERNAME_RE, MIN_PW_LEN, MAX_PW_LEN, REGISTRATION_CODE_KEY } from './tokens'
 import { lockedUntil, recordFailure, recordSuccess } from './lockout'
 import type { UserRow } from '../db/repository'
 
@@ -65,13 +65,10 @@ declare module 'fastify' {
   }
 }
 
-const USERNAME_RE = /^[a-z0-9][a-z0-9._-]{1,31}$/i
-const MIN_PW_LEN  = 8
-const MAX_PW_LEN  = 256
-
 interface SetupBody          { username?: string; displayName?: string; password?: string }
 interface LoginBody          { username?: string; password?: string }
 interface ChangePasswordBody { currentPassword?: string; newPassword?: string }
+interface RegisterBody       { username?: string; displayName?: string; password?: string; inviteCode?: string }
 
 // Called from server/app.ts at the ROOT scope BEFORE any plugin registers.
 // Fastify plugins are encapsulated by default — decorators set inside a plugin
@@ -143,6 +140,61 @@ export async function authRoutes(app: FastifyInstance) {
       id, username: username.toLowerCase(), displayName,
       passwordHash: '', role: 'admin', active: true, createdAt: now, lastLoginAt: now,
     } as UserRow) }
+  })
+
+  // ── Self-service registration ───────────────────────────────────────────--
+  // Off by default — only live once an admin sets an invite code via
+  // PUT /admin/registration-code (see admin-routes.ts). Always creates a
+  // 'player' (never admin); rate-limited like login to slow invite-code
+  // guessing since the code is a shared secret handed to a whole cohort.
+  app.post<{ Body: RegisterBody }>('/auth/register', {
+    config: { rateLimit: { max: 10, timeWindow: '15 minutes' } },
+  }, async (req, reply) => {
+    const registrationCode = repository.getKv<string>(REGISTRATION_CODE_KEY)
+    if (!registrationCode) {
+      return reply.code(403).send({ error: 'self-registration is disabled on this install' })
+    }
+    const { username, displayName, password, inviteCode } = req.body ?? {}
+    if (inviteCode !== registrationCode) {
+      return reply.code(401).send({ error: 'invalid invite code' })
+    }
+    if (!username || !USERNAME_RE.test(username)) {
+      return reply.code(400).send({ error: 'invalid username (alphanumerics, ._- only, 2–32 chars)' })
+    }
+    if (!displayName || displayName.length < 1 || displayName.length > 64) {
+      return reply.code(400).send({ error: 'display name required (1–64 chars)' })
+    }
+    if (!password || password.length < MIN_PW_LEN || password.length > MAX_PW_LEN) {
+      return reply.code(400).send({ error: `password must be ${MIN_PW_LEN}–${MAX_PW_LEN} characters` })
+    }
+    const lower = username.toLowerCase()
+    if (repository.getUserByUsername(lower)) {
+      return reply.code(409).send({ error: 'username already exists' })
+    }
+
+    const now = Date.now()
+    const id  = randomUUID()
+    repository.createUser({
+      id, username: lower, displayName,
+      passwordHash: hashPassphrase(password),
+      role:         'player',
+      active:       true,
+      createdAt:    now,
+      lastLoginAt:  now,
+    })
+    const token = newToken()
+    repository.createAuthSession({
+      tokenHash:  hashToken(token),
+      userId:     id,
+      createdAt:  now,
+      lastSeenAt: now,
+      expiresAt:  now + SESSION_LIFETIME_MS,
+      userAgent:  req.headers['user-agent']?.toString() ?? null,
+    })
+    return reply.code(201).send({ token, user: publicUser({
+      id, username: lower, displayName,
+      passwordHash: '', role: 'player', active: true, createdAt: now, lastLoginAt: now,
+    } as UserRow) })
   })
 
   // ── Login ───────────────────────────────────────────────────────────────--

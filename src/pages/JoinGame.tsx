@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { roomApi } from '../api/rooms'
 import { useRoomStore } from '../store/roomStore'
 import { connectRoom } from '../api/roomSocket'
@@ -11,7 +11,10 @@ const inputCls = `w-full bg-terminal-surface border border-terminal-border focus
 
 export function JoinGame() {
   const navigate = useNavigate()
-  const [code, setCode] = useState('')
+  // Pre-fills from the Lobby's QR/join-link (?code=XXXXXX) so scanning it drops
+  // a player straight into name+role entry instead of retyping the room code.
+  const [searchParams] = useSearchParams()
+  const [code, setCode] = useState(() => (searchParams.get('code') ?? '').toUpperCase().slice(0, 6))
   const [displayName, setDisplayName] = useState('')
   const [charClass, setCharClass] = useState<CharacterClass | null>(null)
   const [busy, setBusy] = useState(false)

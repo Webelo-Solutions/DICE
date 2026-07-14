@@ -4,6 +4,7 @@ import { useGameStore } from '../store/gameStore'
 import { aggregateGaps, winRate, totalXpEarned, scenarioCoverage } from '../utils/gapAnalysis'
 import { levelForXp, xpToNextLevel } from '../utils/leveling'
 import { formatTimestamp } from '../utils/learningPath'
+import { api } from '../api/client'
 import type { LearningPriority } from '../types/game'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -48,6 +49,15 @@ export function Analytics() {
 
   const [confirmClear, setConfirmClear] = useState(false)
   const [expandedGap,  setExpandedGap]  = useState<string | null>(null)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
+
+  const download = async (id: string | null, fn: () => Promise<void>) => {
+    setDownloadError(null); setBusyId(id)
+    try { await fn() }
+    catch (e) { setDownloadError((e as Error).message) }
+    finally { setBusyId(null) }
+  }
 
   const gaps     = aggregateGaps(sessionHistory)
   const rate     = winRate(sessionHistory)
@@ -97,6 +107,13 @@ export function Analytics() {
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-gray-400">{sessionHistory.length} session{sessionHistory.length !== 1 ? 's' : ''} recorded</span>
+          <button
+            onClick={() => download('csv', () => api.downloadSessionHistoryCsv())}
+            disabled={busyId === 'csv'}
+            className="text-xs px-2.5 py-1 rounded border border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-800 disabled:opacity-40 transition-all"
+          >
+            {busyId === 'csv' ? 'Exporting…' : '⬇ Export CSV'}
+          </button>
           {confirmClear ? (
             <div className="flex items-center gap-2">
               <span className="text-xs text-red-600">Clear all history?</span>
@@ -125,6 +142,12 @@ export function Analytics() {
       </div>
 
       <div className="max-w-5xl mx-auto px-8 py-8 space-y-10">
+
+        {downloadError && (
+          <div className="rounded border border-red-200 bg-red-50 text-red-700 text-xs px-4 py-2.5">
+            {downloadError}
+          </div>
+        )}
 
         {/* ── Summary stats ──────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -288,6 +311,26 @@ export function Analytics() {
                 <div className="text-right flex-shrink-0 hidden lg:block">
                   <div className="text-[10px] text-gray-400">{timeAgo(record.playedAt)}</div>
                   <div className="text-[9px] text-gray-300">{formatTimestamp(record.playedAt).split(',').slice(0, 2).join(',')}</div>
+                </div>
+
+                {/* Export */}
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <button
+                    onClick={() => download(`pdf-${record.id}`, () => api.downloadSessionReport(record.id))}
+                    disabled={busyId === `pdf-${record.id}`}
+                    title="Download after-action report (PDF)"
+                    className="text-[10px] px-2 py-1 rounded border border-gray-200 text-gray-400 hover:border-gray-400 hover:text-gray-700 disabled:opacity-40 transition-all"
+                  >
+                    PDF
+                  </button>
+                  <button
+                    onClick={() => download(`json-${record.id}`, () => api.downloadSessionJson(record.id))}
+                    disabled={busyId === `json-${record.id}`}
+                    title="Download raw session record (JSON)"
+                    className="text-[10px] px-2 py-1 rounded border border-gray-200 text-gray-400 hover:border-gray-400 hover:text-gray-700 disabled:opacity-40 transition-all"
+                  >
+                    JSON
+                  </button>
                 </div>
               </div>
             ))}

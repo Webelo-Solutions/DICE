@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, Navigate } from 'react-router-dom'
+import { useNavigate, Navigate, Link } from 'react-router-dom'
 import { apiAuth, AuthApiError } from '../api/auth'
 import { useUserStore, type SignOutReason } from '../store/userStore'
 import { hydrateFromApi } from '../api/sync'
@@ -113,7 +113,7 @@ export function Login() {
         </button>
 
         <p className="text-center text-[10px] text-terminal-dim/60 tracking-wide">
-          Need an account? Ask your DICE administrator to create one.
+          Need an account? <Link to="/register" className="text-terminal-green/80 hover:text-terminal-green">Create one</Link> with an invite code, or ask your DICE administrator.
         </p>
       </form>
     </div>

@@ -4,8 +4,33 @@ import { useGameStore } from '../store/gameStore'
 import { useRoomStore } from '../store/roomStore'
 import { roomApi } from '../api/rooms'
 import { CharacterCard } from '../components/CharacterCard'
+import { Tooltip } from '../components/Tooltip'
 import type { TimerDifficulty } from '../types/game'
 import { TIMER_DIFFICULTY_SECONDS } from '../types/game'
+
+const MODE_INFO = {
+  solo:      'You control every selected character yourself, working through the incident at the full round-timer pace. Any number of characters, including just one.',
+  team:      'Same as Solo — you control every selected character — but requires 2+ and cuts the round timer by 30s, to simulate a real team moving faster with more hands on deck. Want live teammates instead? Host or join a room from the main menu.',
+  adversary: 'One of your selected characters becomes the threat actor, acting against the rest of the team — a red-team-vs-blue-team exercise. Needs at least 2 characters.',
+}
+
+// Small "ⓘ" trigger for a mode's Tooltip — positioned as a sibling over its
+// mode button (see the `relative`/`absolute` wrapper at each call site) so it
+// doesn't sit inside the button and interfere with launching the mode on click.
+function ModeInfo({ text }: { text: string }) {
+  return (
+    <Tooltip text={text}>
+      <span
+        role="button"
+        tabIndex={0}
+        className="w-3.5 h-3.5 rounded-full border border-current text-[9px] leading-[13px]
+          text-center opacity-60 hover:opacity-100 transition-opacity cursor-help select-none"
+      >
+        i
+      </span>
+    </Tooltip>
+  )
+}
 
 const DIFFICULTIES: { value: TimerDifficulty; label: string; desc: string }[] = [
   { value: 'rookie',  label: 'Rookie',   desc: '3 min — read, think, discuss' },
@@ -300,34 +325,44 @@ export function RosterPage() {
                 </p>
               )}
               <div className="flex gap-3">
-                <button
-                  onClick={() => handleLaunch('solo')}
-                  disabled={selectedPlayers.length === 0}
-                  className="flex-1 py-3 rounded border border-terminal-border bg-terminal-surface
-                    hover:border-terminal-green/50 text-sm font-semibold text-gray-300
-                    hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                >
-                  Solo
-                  <div className="text-xs text-terminal-dim font-normal mt-0.5">
-                    {timerLabel('solo')} round timer
+                <div className="relative flex-1">
+                  <button
+                    onClick={() => handleLaunch('solo')}
+                    disabled={selectedPlayers.length === 0}
+                    className="w-full py-3 rounded border border-terminal-border bg-terminal-surface
+                      hover:border-terminal-green/50 text-sm font-semibold text-gray-300
+                      hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  >
+                    Solo
+                    <div className="text-xs text-terminal-dim font-normal mt-0.5">
+                      {timerLabel('solo')} round timer
+                    </div>
+                  </button>
+                  <div className="absolute top-2 right-2 text-terminal-dim">
+                    <ModeInfo text={MODE_INFO.solo} />
                   </div>
-                </button>
-                <button
-                  onClick={() => handleLaunch('team')}
-                  disabled={selectedPlayers.length < 2}
-                  className="flex-1 py-3 rounded border border-terminal-green/40 bg-terminal-green/5
-                    hover:bg-terminal-green/10 hover:border-terminal-green text-sm font-semibold text-terminal-green
-                    disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                >
-                  Team
-                  <div className="text-xs text-terminal-green/60 font-normal mt-0.5">
-                    {timerLabel('team')} · {selectedPlayers.length} player{selectedPlayers.length !== 1 ? 's' : ''}
+                </div>
+                <div className="relative flex-1">
+                  <button
+                    onClick={() => handleLaunch('team')}
+                    disabled={selectedPlayers.length < 2}
+                    className="w-full py-3 rounded border border-terminal-green/40 bg-terminal-green/5
+                      hover:bg-terminal-green/10 hover:border-terminal-green text-sm font-semibold text-terminal-green
+                      disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  >
+                    Team
+                    <div className="text-xs text-terminal-green/60 font-normal mt-0.5">
+                      {timerLabel('team')} · {selectedPlayers.length} player{selectedPlayers.length !== 1 ? 's' : ''}
+                    </div>
+                  </button>
+                  <div className="absolute top-2 right-2 text-terminal-green">
+                    <ModeInfo text={MODE_INFO.team} />
                   </div>
-                </button>
+                </div>
               </div>
 
               {/* Adversary Mode */}
-              <div className="pt-3 border-t border-terminal-border">
+              <div className="pt-3 border-t border-terminal-border relative">
                 <button
                   onClick={() => navigate('/adversary')}
                   disabled={roster.length < 2}
@@ -341,6 +376,9 @@ export function RosterPage() {
                     One player is the threat actor
                   </div>
                 </button>
+                <div className="absolute top-5 right-2 text-terminal-red/70">
+                  <ModeInfo text={MODE_INFO.adversary} />
+                </div>
               </div>
             </div>
           </div>

@@ -49,4 +49,8 @@ export const roomApi = {
     req<DMResponse>(`/rooms/${encodeURIComponent(code)}/dm`, {
       method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(payload),
     }),
+
+  // LAN address + port the server is bound to, so the Lobby can build a
+  // shareable join link/QR instead of the host having to run `ipconfig`.
+  getNetworkInfo: () => req<{ port: number; addresses: string[] }>('/network-info'),
 }

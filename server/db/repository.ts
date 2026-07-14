@@ -62,6 +62,10 @@ export interface DiceRepository {
   listSessionHistory(userId: string): SessionRecord[]
   recordSession(record: SessionRecord, userId: string): void
   clearSessionHistory(userId: string): void
+  // Admin/reporting: cross-user reads, unscoped. ownerUserId is attached
+  // alongside each record so callers can attribute it to a user.
+  listAllSessionHistory(): Array<SessionRecord & { ownerUserId: string | null }>
+  getSessionHistoryById(id: string): (SessionRecord & { ownerUserId: string | null }) | null
 
   // ── Singletons / live state ─────────────────────────────
   getOrgState(): OrgState | null

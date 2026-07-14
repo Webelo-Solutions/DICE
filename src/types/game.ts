@@ -165,7 +165,12 @@ export interface GameSession {
   lastRoll:                  RollRecord | null
   roundTimerExpired:         boolean
   phase:                     'init' | 'turn'
-  status:                    'setup' | 'active' | 'victory' | 'defeat'
+  // 'timeout' = the engine force-concluded the session because real elapsed
+  // time blew past the scenario's estimatedMinutes well beyond what the DM's
+  // own pacing (scenarioClockDeltaMinutes / sessionOutcome) resolved on its
+  // own — a backstop independent of the DM's cooperation. Maps to a 'partial'
+  // SessionResult outcome, not a loss.
+  status:                    'setup' | 'active' | 'victory' | 'defeat' | 'timeout'
   timerDifficulty:           TimerDifficulty
   startedAt:                 number   // Unix ms — set when initSession fires
   adversary?:                AdversaryState
