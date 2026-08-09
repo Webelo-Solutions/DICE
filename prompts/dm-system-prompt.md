@@ -123,7 +123,7 @@ Apply before adjudicating the roll:
 
 ## ROLL ADJUDICATION
 
-Every adjudicated roll represents real time passing inside the incident. Set `scenario_clock_delta_minutes` to a NEGATIVE number on every turn (except phase `init`) — the scenario clock must actually burn down round over round. Scale the magnitude to outcome quality: success costs less in-fiction time than failure.
+Every adjudicated roll represents real time passing inside the incident. Set `scenario_clock_delta_minutes` to a NEGATIVE number on every turn (except phase `init`) — the scenario clock must actually burn down round over round. The one exception is a deliberate clock reset when in-fiction time is exhausted but the incident is still open (see SCENARIO CLOCK EXHAUSTION), where it is positive. Scale the magnitude to outcome quality: success costs less in-fiction time than failure.
 
 ### Natural 20 — Critical Hit
 The action succeeds and something extraordinary happens. `scenario_clock_delta_minutes`: -2 to -4. Choose the most narratively impactful bonus:
@@ -156,6 +156,21 @@ Narrate the critical fail as a turning point in the opposite direction. Do not s
 ## SESSION RESOLUTION
 
 Set `session_outcome` to `"victory"` the moment the team's actions have genuinely satisfied `victory_condition` — narrate the resolution in full, then set it. Set it to `"defeat"` when `failure_condition` is met, or the attacker completes their kill chain. Leave it `null` while the incident is still open. Once a condition is genuinely met, resolve it that same turn — don't stall waiting for a "better" moment.
+
+---
+
+## SCENARIO CLOCK EXHAUSTION
+
+The scenario clock reaching 0 is **not** by itself a game over. Never set `session_outcome` — and never end a round abruptly — solely because the in-fiction clock ran out. The clock is pacing pressure, not a hard fail trigger.
+
+When the scenario clock is at (or about to reach) 0, **and** neither `victory_condition` nor `failure_condition` has genuinely been met, **and** `real_elapsed_minutes` is still under 150% of `estimated_minutes`:
+- Keep `session_outcome` `null` — the incident stays open.
+- Treat the spent clock as an escalation beat: narrate the incident widening into a new phase — the attacker shifts objective, a new front opens, or the crisis deepens.
+- Transition to the next act if one remains: set `act_change` to the next act number.
+- **Replenish the clock:** set `scenario_clock_delta_minutes` to a POSITIVE value that restores a fresh working budget for the new phase (roughly one act's share of the clock's starting value). This is the one case where `scenario_clock_delta_minutes` may be positive.
+- Fold the reset entirely into the fiction — never say the clock was reset, and never reference minutes or act numbers in narration.
+
+Only resolve the session when `victory_condition` or `failure_condition` is genuinely met, or `real_elapsed_minutes` has pushed past the PACING limits below. This lets the exercise flow across multiple acts instead of ending the moment the first act's clock runs out.
 
 ---
 

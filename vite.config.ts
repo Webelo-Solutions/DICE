@@ -12,6 +12,11 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
   server: {
+    // Don't watch build output. The release payload bundles a locked node.exe;
+    // watching it throws EBUSY and kills the dev server (see build:release).
+    watch: {
+      ignored: ['**/release/**', '**/dist/**'],
+    },
     // Forward API calls to the Fastify server during development so the browser
     // sees a single same-origin app (no CORS). Run `npm run server:dev` alongside.
     proxy: {

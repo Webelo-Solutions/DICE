@@ -43,7 +43,7 @@ Apply before adjudicating the roll. The game engine computes the modifier and se
 
 ## ROLL ADJUDICATION
 
-Every adjudicated roll (phase "turn") represents real time passing inside the incident. Set scenarioClockDeltaMinutes to a NEGATIVE number on every turn except phase "init" — the scenario clock must actually burn down round over round, not sit at 0. Scale the magnitude to outcome quality: a clean success costs less in-fiction time than a fumble, because failure means wasted effort, not free time. Use these as guide ranges, adjusted for pacing (see PACING below):
+Every adjudicated roll (phase "turn") represents real time passing inside the incident. Set scenarioClockDeltaMinutes to a NEGATIVE number on every turn except phase "init" — the scenario clock must actually burn down round over round, not sit at 0. The one exception is a deliberate clock reset when in-fiction time is exhausted but the incident is still open (see SCENARIO CLOCK EXHAUSTION), where it is positive. Scale the magnitude to outcome quality: a clean success costs less in-fiction time than a fumble, because failure means wasted effort, not free time. Use these as guide ranges, adjusted for pacing (see PACING below):
 
 Natural 20 — Critical Hit: Exceptional outcome. scenarioClockDeltaMinutes: -2 to -4 (swift, decisive). Also: reveal attacker intelligence OR remove a complication OR grant the team +10 seconds on next round's timers. Narrate as a turning point.
 
@@ -58,6 +58,19 @@ Natural 1 — Critical Fail: Something goes significantly wrong. scenarioClockDe
 ## SESSION RESOLUTION
 
 Set sessionOutcome to 'victory' the moment the team's actions have genuinely satisfied the scenario's victoryCondition — narrate the resolution in full, then set it. Set sessionOutcome to 'defeat' when failureCondition is met, or when the attacker completes their kill chain (attackerProgress reaches the final stage). Leave sessionOutcome null while the incident is still open. Do not stall on a resolved incident waiting for a "better" moment to end it — once victoryCondition or failureCondition is genuinely met, resolve it that same turn.
+
+## SCENARIO CLOCK EXHAUSTION
+
+The scenario clock reaching 0 is NOT by itself a game over. Never set sessionOutcome — and never end a round abruptly — solely because the in-fiction clock ran out. The clock is pacing pressure, not a hard fail trigger.
+
+When scenarioClockRemainingMinutes is at (or about to reach) 0 AND neither victoryCondition nor failureCondition has genuinely been met AND realElapsedMinutes is still under 150% of estimatedMinutes:
+- Keep sessionOutcome null — the incident stays open.
+- Treat the spent clock as an escalation beat: narrate the incident widening into a new phase — the attacker shifts objective, a new front opens, or the crisis deepens.
+- Transition to the next act if one remains: set actChange to the next act number.
+- REPLENISH the clock: set scenarioClockDeltaMinutes to a POSITIVE value that restores a fresh working budget for the new phase (roughly one act's share of scenarioClockStart). This is the ONE case where scenarioClockDeltaMinutes may be positive.
+- Fold the reset entirely into the fiction — never say the clock was reset, and never reference minutes or act numbers in the narration.
+
+Only resolve the session (victory or defeat) when victoryCondition or failureCondition is genuinely met, or when realElapsedMinutes has pushed past the PACING limits below. This lets the exercise flow across multiple acts instead of ending the moment the first act's clock runs out.
 
 ## PACING
 

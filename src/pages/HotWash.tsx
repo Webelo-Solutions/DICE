@@ -567,11 +567,11 @@ export function HotWash() {
                         <div className="text-xs font-semibold text-red-700 uppercase tracking-widest mb-2">
                           Key Misses
                         </div>
-                        <ul className="space-y-1">
+                        <ul className="space-y-3">
                           {actPath.keyMisses.map((miss, i) => (
                             <li key={i} className="text-xs text-gray-700 flex gap-2">
-                              <span className="text-red-500 flex-shrink-0">✗</span>
-                              <span>{miss}</span>
+                              <span className="text-red-500 flex-shrink-0 mt-0.5">✗</span>
+                              <span className="leading-relaxed">{miss}</span>
                             </li>
                           ))}
                         </ul>

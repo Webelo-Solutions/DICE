@@ -304,7 +304,14 @@ export function DiceRollOverlay({ player, action, lastRoll, onRollComplete, onDi
                 <AnimatePresence mode="wait">
                   {displayNumber !== null ? (
                     <motion.span
-                      key={isAnimating ? displayNumber : 'final'}
+                      // Use a STABLE key while spinning ('rolling') rather than the
+                      // per-frame number. With mode="wait", a key that changes every
+                      // ~20-38ms outpaces the exit animations and backs them up; the
+                      // component can then settle on a stale intermediate face instead
+                      // of the final result. One key during the spin → one clean exit
+                      // → the resting face is always `result`. The face text still
+                      // updates in place each frame, so the slot-machine effect stays.
+                      key={isAnimating ? 'rolling' : 'final'}
                       initial={{ scale: 0.3,  opacity: 0 }}
                       animate={{ scale: 1,    opacity: 1 }}
                       exit={{   scale: 1.8,   opacity: 0 }}

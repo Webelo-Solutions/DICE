@@ -17,7 +17,7 @@ export interface ActOptimalPath {
   actNumber:         number
   primaryObjective:  string                   // echoed for context
   recommendedActions: OptimalAction[]         // 3–5 ordered steps for this act
-  keyMisses:         string[]                 // what the team didn't do that they should have
+  keyMisses:         string[]                 // paragraph each: what was missed, why it mattered, and the transferable lesson
 }
 
 export interface OptimalPathResult {
@@ -74,7 +74,7 @@ ${actualActions}
 
 INSTRUCTIONS:
 1. For each act, produce 3–5 ordered "optimal" actions a strong IR team would take. Anchor them to the act's clues and primary objective. Each \`label\` should be a short verb phrase. Each \`rationale\` should be ONE sentence explaining why this action beats alternatives at this point in the timeline.
-2. For each act, list 1–4 \`keyMisses\` — specific things the team failed to do (or did too late) that would have made a measurable difference. Be concrete, not generic.
+2. For each act, list 1–4 \`keyMisses\` — specific things the team failed to do (or did too late) that would have made a measurable difference. Write EACH key miss as a full instructional paragraph of at least 4 sentences (never a single sentence — this section is the primary learning artifact after the exercise). In each paragraph: (a) name concretely what the team missed or did too late, anchored to this act's clues and to what they actually did; (b) state the correct action and the moment it should have happened; (c) explain the measurable consequence their omission created in THIS scenario — what the attacker gained, what evidence was lost, or how much time/blast-radius it cost; and (d) close with the transferable lesson, phrased so the team recognizes and handles the same situation in a real incident. Be concrete and scenario-specific, not generic.
 3. Where one archetype is clearly best-positioned for an action (e.g., Engineer for automation, Hunter for proactive search), set \`archetype\`. Omit it when any role could execute.
 4. Write a 2–3 sentence \`summary\` describing the optimal arc of the response — what the ideal team would prioritize and in what order.
 5. Write a 1 sentence \`caveats\` line acknowledging that real IR has multiple valid paths and this is one defensible expert opinion.
@@ -89,7 +89,7 @@ Return ONLY valid JSON — no markdown, no preamble:
       "recommendedActions": [
         { "label": "Triage the alert", "rationale": "...", "archetype": "Analyst" }
       ],
-      "keyMisses": ["..."]
+      "keyMisses": ["a full multi-sentence instructional paragraph: what was missed, the correct action and its timing, the concrete consequence in this scenario, and the transferable lesson"]
     }
   ],
   "caveats": "..."

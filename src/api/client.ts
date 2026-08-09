@@ -87,12 +87,23 @@ export const api = {
   // Import returns structured validation errors (not just a thrown HTTP error)
   // so the import UI can show the user exactly what's wrong with a pack file.
   importContentPack: async (pack: unknown): Promise<ContentPackImportResult> => {
+    // This endpoint is auth-guarded server-side, so it must carry the bearer
+    // token like req() does. It uses a raw fetch (not req()) only to surface the
+    // server's structured validation errors instead of throwing on non-2xx.
+    const store = useUserStore.getState()
+    const token = store.token
     const res = await fetch(`${BASE}/content-packs/import`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify(pack),
     })
     if (res.ok) return { ok: true, pack: (await res.json()) as ContentPackSummary }
+    // Mirror req()'s mid-session 401 handling: a rejected token means the session
+    // is dead, so clear it and let RequireAuth route the user back to /login.
+    if (res.status === 401 && token && store.user) store.clearSession('expired')
     const body = await res.json().catch(() => ({})) as { error?: string; details?: string[] }
     return { ok: false, errors: body.details ?? [body.error ?? `Import failed (${res.status})`] }
   },
