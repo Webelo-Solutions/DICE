@@ -14,6 +14,8 @@ import type { OrgState } from '../types/orgState'
 import { INITIAL_ORG_STATE } from '../types/orgState'
 import { applySessionToOrg } from '../utils/orgStateEngine'
 import type { OrgProfile } from '../types/orgProfile'
+import { useInjectsCatalogStore } from './injectsCatalogStore'
+import type { CriticalInjectEntry, CriticalInjectCatalogEntry } from '../types/game'
 
 interface GameStore {
   roster:       Character[]
@@ -47,6 +49,12 @@ interface GameStore {
   levelUpCharacter: (characterId: string, newLevel: number, choice: LevelUpChoice) => void
   resetAll:    () => void
 
+  // Fires on a player skill-check natural 20 / natural 1 — draws a random
+  // (no-repeat-until-exhausted) entry from the scenario's critical-inject
+  // table, applies its mechanical effect, and appends it to the feed. No-op
+  // when the scenario has no such table configured (backward compatible).
+  resolveCriticalInject: (tier: 'critical_hit' | 'critical_fail') => void
+
   // Facilitator controls
   facilitatorAdjustClock:       (deltaMins: number) => void
   facilitatorSetAttackerStage:  (stage: string) => void
@@ -76,6 +84,18 @@ interface GameStore {
 function nextPlayerId(order: string[], current: string): string {
   const idx = order.indexOf(current)
   return order[(idx + 1) % order.length]
+}
+
+// Resolves a scenario's criticalHitInjectIds/criticalFailInjectIds against the
+// (already-fetched, see src/store/injectsCatalogStore.ts) global catalog. Ids
+// that don't resolve — catalog not yet loaded, entry deleted, wrong kind —
+// are silently dropped rather than erroring, same graceful-degradation
+// philosophy as an empty/undefined table.
+function resolveCatalogInjects(ids: string[] | undefined, kind: CriticalInjectCatalogEntry['kind']): CriticalInjectEntry[] {
+  const catalog = useInjectsCatalogStore.getState().entries
+  return (ids ?? [])
+    .map((id) => catalog.find((e) => e.id === id && e.kind === kind))
+    .filter((e): e is CriticalInjectCatalogEntry => !!e)
 }
 
 export const useGameStore = create<GameStore>()(
@@ -171,6 +191,12 @@ export const useGameStore = create<GameStore>()(
           activeComplications:    [],
           lastRoll:               null,
           roundTimerExpired:      false,
+          activeEffects:          [],
+          scriptedCriticalEffect: null,
+          critHitInjectsDrawn:    [],
+          critFailInjectsDrawn:   [],
+          resolvedCriticalHitInjects:  resolveCatalogInjects(scenario.criticalHitInjectIds, 'critical_hit'),
+          resolvedCriticalFailInjects: resolveCatalogInjects(scenario.criticalFailInjectIds, 'critical_fail'),
           phase:                  'init',
           status:                 'active',
           timerDifficulty,
@@ -217,6 +243,103 @@ export const useGameStore = create<GameStore>()(
             },
           }
         }),
+
+      resolveCriticalInject: (tier) => {
+        const s = get().session
+        if (!s) return
+
+        const table = tier === 'critical_hit' ? s.resolvedCriticalHitInjects : s.resolvedCriticalFailInjects
+        if (!table || table.length === 0) return
+
+        const drawnKey  = tier === 'critical_hit' ? 'critHitInjectsDrawn' : 'critFailInjectsDrawn'
+        const drawnIds  = s[drawnKey]
+        // Draw without replacement; reshuffle (treat as a fresh deck) once exhausted.
+        let pool      = table.filter((e) => !drawnIds.includes(e.id))
+        let baseDrawn = drawnIds
+        if (pool.length === 0) {
+          pool      = table
+          baseDrawn = []
+        }
+        const entry     = pool[Math.floor(Math.random() * pool.length)]
+        const newDrawn  = [...baseDrawn, entry.id]
+
+        let attackerProgress = s.attackerProgress
+        let status            = s.status
+        if (entry.advanceKillChainStage) {
+          const stages = s.scenario.killChainStages
+          const curIdx = stages.indexOf(attackerProgress[attackerProgress.length - 1])
+          if (curIdx !== -1 && curIdx + 1 < stages.length) {
+            attackerProgress = [...attackerProgress, stages[curIdx + 1]]
+            const failStage = stages[stages.length - 1]
+            status = attackerProgress.includes(failStage) ? 'defeat' : status
+          }
+        }
+
+        // Same dedupe-then-merge pattern as applyDMResponse, to preserve the
+        // monotone-state invariant (no reappearing "contained" complications).
+        const removedSet         = new Set(entry.complicationsRemoved ?? [])
+        const addedComplications = (entry.complicationsAdded ?? []).filter((c) => !removedSet.has(c))
+        const activeComplications = Array.from(new Set([
+          ...s.activeComplications.filter((c) => !removedSet.has(c)),
+          ...addedComplications,
+        ]))
+
+        let npcs = s.npcs
+        if (entry.npcEffect) {
+          const eff = entry.npcEffect
+          npcs = s.npcs.map((npc) => {
+            if (npc.role !== eff.role) return npc
+            const newTrust = Math.max(0, Math.min(100, npc.trust + eff.trustDelta))
+            return {
+              ...npc,
+              trust:      newTrust,
+              stance:     trustToStance(newTrust),
+              // Unlike applyDMResponse's npcUpdates (which always reveals the
+              // NPC), only force introduction when the author explicitly asked.
+              introduced: eff.forceIntroduced ? true : npc.introduced,
+              awareness:  eff.awarenessAdded && eff.awarenessAdded.length > 0
+                ? [...npc.awareness, ...eff.awarenessAdded]
+                : npc.awareness,
+              interactions: [...npc.interactions, {
+                round:      s.round,
+                act:        s.act,
+                summary:    entry.description,
+                trustDelta: eff.trustDelta,
+              }],
+              lastActiveRound: s.round,
+            }
+          })
+        }
+
+        const activeEffects = entry.temporaryEffect
+          ? [...s.activeEffects, {
+              id:           crypto.randomUUID(),
+              description:  entry.temporaryEffect.description,
+              expiresRound: s.round + entry.temporaryEffect.durationRounds,
+            }]
+          : s.activeEffects
+
+        set({
+          session: {
+            ...s,
+            attackerProgress,
+            activeComplications,
+            status,
+            npcs,
+            activeEffects,
+            scriptedCriticalEffect: entry.description,
+            [drawnKey]: newDrawn,
+          },
+        })
+
+        get().appendFeed({
+          id:        crypto.randomUUID(),
+          type:      'inject',
+          speaker:   tier === 'critical_hit' ? '! INJECT [CRITICAL HIT]' : '! INJECT [CRITICAL FAIL]',
+          text:      entry.description,
+          timestamp: Date.now(),
+        })
+      },
 
       applyDMResponse: (response) => {
         const s = get().session
@@ -300,6 +423,7 @@ export const useGameStore = create<GameStore>()(
             act:                    newAct,
             phase:                  'turn',
             roundTimerExpired:      false,
+            scriptedCriticalEffect: null,
             status,
             adversary,
             npcs:                   newNpcs,
@@ -328,6 +452,7 @@ export const useGameStore = create<GameStore>()(
               ...s.session,
               currentTurnPlayerId: nextId,
               round:               newRound,
+              activeEffects:       s.session.activeEffects.filter((e) => e.expiresRound >= newRound),
             },
           }
         }),
@@ -338,7 +463,9 @@ export const useGameStore = create<GameStore>()(
           if (!character) return {}
           const updates = applyLevelUp(character, newLevel, choice)
           return {
-            roster: s.roster.map((c) => c.id === characterId ? { ...c, ...updates } : c),
+            roster: s.roster.map((c) =>
+              c.id === characterId ? { ...c, ...updates, pendingLevelUp: null } : c
+            ),
           }
         }),
 
@@ -421,6 +548,8 @@ export const useGameStore = create<GameStore>()(
             criticalHits:       critHits,
             criticalFails:      critFails,
             injectsSurvived:    feed.filter((e) => e.type === 'inject').length,
+            criticalInjectsFired: feed.filter((e) => e.type === 'inject' &&
+              (e.speaker === '! INJECT [CRITICAL HIT]' || e.speaker === '! INJECT [CRITICAL FAIL]')).length,
             clockRemaining:     session.scenarioClockRemaining,
             roundsPlayed:       session.round,
             startedAt:          session.startedAt,

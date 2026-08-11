@@ -76,6 +76,7 @@ export function renderSessionReportPdf(record: SessionRecord, ownerLabel: string
     kv('XP Awarded:', String(record.result.xpAwarded))
     kv('Critical Hits / Fails:', `${record.result.criticalHits} / ${record.result.criticalFails}`)
     kv('Injects Survived:', String(record.result.injectsSurvived))
+    kv('Critical Injects Fired:', String(record.result.criticalInjectsFired))
     kv('Scenario Clock Remaining:', `${record.result.clockRemaining} min`)
     kv('Hints Used:', String(record.result.hintsUsed))
     kv('Round Timer Expiries:', String(record.result.timerExpiries))

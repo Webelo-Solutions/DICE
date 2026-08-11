@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom'
+import { MotionConfig } from 'framer-motion'
 import { Landing }          from './pages/Landing'
 import { ScenarioSelect }   from './pages/ScenarioSelect'
 import { RosterPage }       from './pages/RosterPage'
@@ -19,31 +20,33 @@ import { Login }            from './pages/Login'
 import { Register }         from './pages/Register'
 import { AdminUsers }       from './pages/AdminUsers'
 import { AdminAnalytics }   from './pages/AdminAnalytics'
+import { AdminInjectsCatalog } from './pages/AdminInjectsCatalog'
+import { AdminScenarios }   from './pages/AdminScenarios'
 import { Account }          from './pages/Account'
 import { RoomAutoNav }      from './components/RoomAutoNav'
-import { UserChip }         from './components/UserChip'
+import { AppShell }         from './components/AppShell'
 import { useGameStore }     from './store/gameStore'
 import { useUserStore }     from './store/userStore'
 import type { ScenarioPack } from './types/game'
 
 // Layout route that gates the entire app behind auth. If first-run setup isn't
 // done yet, route to /setup; if no user is signed in, route to /login. Renders
-// the persistent UserChip in the top-right whenever a user IS signed in.
+// the persistent AppShell (sidebar nav + command palette + toasts) whenever a
+// user IS signed in.
 function RequireAuth() {
   const setupRequired = useUserStore((s) => s.setupRequired)
   const user          = useUserStore((s) => s.user)
   if (setupRequired) return <Navigate to="/setup" replace />
   if (!user)         return <Navigate to="/login" replace />
   return (
-    <>
-      <UserChip />
+    <AppShell>
       <Outlet />
-    </>
+    </AppShell>
   )
 }
 
 // Layered on top of RequireAuth — also enforces role=admin. Renders inside
-// the auth layout so UserChip stays visible.
+// the auth layout so the AppShell sidebar stays visible.
 function RequireAdmin({ children }: { children: React.ReactNode }) {
   const user = useUserStore((s) => s.user)
   if (!user) return <Navigate to="/login" replace />
@@ -80,6 +83,14 @@ export function App() {
         activeComplications:    [],
         lastRoll:               null,
         roundTimerExpired:      false,
+        activeEffects:          [],
+        scriptedCriticalEffect: null,
+        critHitInjectsDrawn:    [],
+        critFailInjectsDrawn:   [],
+        // Placeholders — real resolution happens at the initSession call in
+        // RosterPage/AdversarySetup, once the catalog store has been fetched.
+        resolvedCriticalHitInjects:  [],
+        resolvedCriticalFailInjects: [],
         phase:                  'init',
         status:                 'setup',
         timerDifficulty:        'analyst',
@@ -91,7 +102,7 @@ export function App() {
   }
 
   return (
-    <>
+    <MotionConfig reducedMotion="user">
     <RoomAutoNav />
     <Routes>
       {/* Unprotected — visible without a session */}
@@ -119,9 +130,11 @@ export function App() {
         <Route path="/account"     element={<Account />} />
         <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
         <Route path="/admin/analytics" element={<RequireAdmin><AdminAnalytics /></RequireAdmin>} />
+        <Route path="/admin/injects-catalog" element={<RequireAdmin><AdminInjectsCatalog /></RequireAdmin>} />
+        <Route path="/admin/scenarios" element={<RequireAdmin><AdminScenarios /></RequireAdmin>} />
         <Route path="*"          element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
-    </>
+    </MotionConfig>
   )
 }

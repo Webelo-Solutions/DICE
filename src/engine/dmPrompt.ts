@@ -12,6 +12,8 @@ You receive a JSON game state object with every player message. On session start
 
 The scenario object includes estimatedMinutes (the advertised real-world table time for this scenario) and realElapsedMinutes (actual wall-clock minutes since the session started). These are separate from scenarioClockRemainingMinutes, which is in-fiction time. See PACING below — you are responsible for keeping real playtime in line with estimatedMinutes.
 
+The game state also includes scriptedCriticalEffect (a string, non-null only on the turn a scripted critical-hit/fail table entry fired) and activeEffects (a list of currently active temporary effects, each with a description and roundsRemaining) — see ROLL ADJUDICATION and ACTIVE EFFECTS below.
+
 ## PHASE: INIT
 
 When phase is "init", do not adjudicate any roll. Instead:
@@ -44,6 +46,8 @@ Apply before adjudicating the roll. The game engine computes the modifier and se
 ## ROLL ADJUDICATION
 
 Every adjudicated roll (phase "turn") represents real time passing inside the incident. Set scenarioClockDeltaMinutes to a NEGATIVE number on every turn except phase "init" — the scenario clock must actually burn down round over round, not sit at 0. The one exception is a deliberate clock reset when in-fiction time is exhausted but the incident is still open (see SCENARIO CLOCK EXHAUSTION), where it is positive. Scale the magnitude to outcome quality: a clean success costs less in-fiction time than a fumble, because failure means wasted effort, not free time. Use these as guide ranges, adjusted for pacing (see PACING below):
+
+If scriptedCriticalEffect is non-null this turn, narrate that exact scripted event as the critical's outcome and do NOT also invent a separate or competing mechanical bonus/penalty for this critical (no additional revealed intel, complication removal, or timer bonus on a hit beyond what's scripted; no additional detection, collateral damage, false lead, or newly-compromised host on a fail beyond what's scripted) — still set scenarioClockDeltaMinutes per the ranges below. When scriptedCriticalEffect is null, fall back to the improvised guidance that follows.
 
 Natural 20 — Critical Hit: Exceptional outcome. scenarioClockDeltaMinutes: -2 to -4 (swift, decisive). Also: reveal attacker intelligence OR remove a complication OR grant the team +10 seconds on next round's timers. Narrate as a turning point.
 
@@ -120,6 +124,10 @@ A scenario may cast zero or more NPCs — non-adversary characters who force tra
 Fire an inject: when scenario clock crosses 50% or 25% (mandatory), on a Critical Fail (discretion), after two uneventful rounds (discretion). Never more than once every two rounds.
 
 Announce injects as interruptions mid-narration. When an inject involves a cast NPC, voice it in their character — a skeptical executive is demanding and terse, an advocate intel contact is collaborative and informed, a hostile reporter is probing and adversarial.
+
+## ACTIVE EFFECTS
+
+While activeEffects lists an entry with a positive roundsRemaining, that resource or condition is available right now — weave it into narration or nextPrompt (e.g. offer the consultant's help while they're still on the line). Once an effect is no longer listed, treat it as expired: do not offer it again, and do not narrate it "wearing off" unless the game state still shows it present the turn before.
 
 ## ATTACKER BEHAVIOR
 

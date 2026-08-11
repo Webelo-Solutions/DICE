@@ -89,10 +89,10 @@ export function ActionMenu({ character, onSubmit, disabled, dcHint, dcPenalty = 
       {/* Primary actions */}
       <div>
         <div className="flex items-center gap-2 mb-1.5">
-          <span className="text-[9px] font-mono tracking-widest text-terminal-green/80 uppercase">
+          <span className="text-[11px] font-mono tracking-widest text-terminal-green/80 uppercase">
             {character.class}
           </span>
-          <span className="text-[9px] font-mono text-terminal-green/40">— primary actions</span>
+          <span className="text-[11px] font-mono text-terminal-green/40">— primary actions</span>
         </div>
         <div className="flex flex-wrap gap-1.5">
           {actions.primary.map((action) => {
@@ -103,7 +103,7 @@ export function ActionMenu({ character, onSubmit, disabled, dcHint, dcPenalty = 
                 onClick={() => select(action.label, action.stat, 0)}
                 disabled={disabled}
                 title={`${action.description}\nStat: ${STAT_LABEL[action.stat]}`}
-                className={`group relative px-2.5 py-1 text-xs font-mono rounded border
+                className={`group relative px-2.5 py-1 text-sm font-mono rounded border
                   transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed ${
                   active
                     ? 'border-terminal-green bg-terminal-green/20 text-terminal-green ring-1 ring-terminal-green/40'
@@ -123,10 +123,10 @@ export function ActionMenu({ character, onSubmit, disabled, dcHint, dcPenalty = 
       {/* Secondary actions */}
       <div>
         <div className="flex items-center gap-2 mb-1.5">
-          <span className="text-[9px] font-mono tracking-widest text-terminal-amber/60 uppercase">
+          <span className="text-[11px] font-mono tracking-widest text-terminal-amber/60 uppercase">
             Secondary
           </span>
-          <span className="text-[9px] font-mono text-terminal-amber/40">+2 DC — outside specialty</span>
+          <span className="text-[11px] font-mono text-terminal-amber/40">+2 DC — outside specialty</span>
         </div>
         <div className="flex flex-wrap gap-1.5">
           {actions.secondary.map((action) => {
@@ -137,7 +137,7 @@ export function ActionMenu({ character, onSubmit, disabled, dcHint, dcPenalty = 
                 onClick={() => select(action.label, action.stat, 2)}
                 disabled={disabled}
                 title={`${action.description}\nStat: ${STAT_LABEL[action.stat]}\n+2 DC penalty`}
-                className={`group relative px-2.5 py-1 text-xs font-mono rounded border
+                className={`group relative px-2.5 py-1 text-sm font-mono rounded border
                   transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed ${
                   active
                     ? 'border-terminal-amber bg-terminal-amber/20 text-terminal-amber ring-1 ring-terminal-amber/40'
@@ -160,13 +160,13 @@ export function ActionMenu({ character, onSubmit, disabled, dcHint, dcPenalty = 
           {/* Selection badge */}
           <div className="flex items-center gap-2 min-w-0">
             {selection.improvised ? (
-              <span className="text-[9px] font-mono tracking-widest text-terminal-red/70 uppercase">
+              <span className="text-[11px] font-mono tracking-widest text-terminal-red/70 uppercase">
                 Improvise
                 <span className="text-terminal-red/40 ml-1.5">+3 DC</span>
               </span>
             ) : (
               <>
-                <span className={`text-[9px] font-mono tracking-widest uppercase truncate ${
+                <span className={`text-[11px] font-mono tracking-widest uppercase truncate ${
                   selection.penalty === 0 ? 'text-terminal-green/90' : 'text-terminal-amber/90'
                 }`}>
                   {selection.label}
@@ -291,7 +291,7 @@ export function ActionMenu({ character, onSubmit, disabled, dcHint, dcPenalty = 
         <button
           onClick={() => select('', null, 3, true)}
           disabled={disabled}
-          className="text-[10px] font-mono text-terminal-dim/50 hover:text-terminal-dim
+          className="text-xs font-mono text-terminal-dim/50 hover:text-terminal-dim
             underline underline-offset-2 decoration-dotted transition-colors
             disabled:cursor-not-allowed disabled:no-underline"
         >

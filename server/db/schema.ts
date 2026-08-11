@@ -42,6 +42,21 @@ export const customScenarios = sqliteTable('custom_scenarios', {
   // user-authored). Lets a pack's scenarios be removed cleanly on uninstall.
   packId:     text('pack_id'),
   ownerUserId: text('owner_user_id'),
+  // Admin-authored/curated scenarios, visible to every user regardless of
+  // owner or pack provenance (see server/auth/admin-routes.ts scenario routes).
+  isGlobal:   integer('is_global', { mode: 'boolean' }).notNull().default(false),
+})
+
+// Global, install-wide catalog of critical-hit/fail inject entries, managed via
+// the admin panel. Scenarios reference entries here by id (ScenarioPack's
+// criticalHitInjectIds/criticalFailInjectIds) instead of embedding full copies,
+// so the same entry can be curated once and reused across scenarios. No
+// owner/pack scoping — this table is inherently shared, same as content_packs.
+export const injectsCatalog = sqliteTable('injects_catalog', {
+  id:        text('id').primaryKey(),
+  kind:      text('kind').notNull(), // 'critical_hit' | 'critical_fail'
+  data:      text('data', { mode: 'json' }).notNull(), // description + effect fields
+  updatedAt: integer('updated_at').notNull(),
 })
 
 // Installed content packs (see DICEPACK-FORMAT.md). The `data` blob holds the
@@ -112,7 +127,8 @@ export const participants = sqliteTable('participants', {
   role:        text('role').notNull(),          // facilitator | player
   displayName: text('display_name').notNull(),
   characterId: text('character_id'),            // the player's character id (= character.id)
-  character:   text('character', { mode: 'json' }),  // the player's auto-generated character (Option B)
+  character:   text('character', { mode: 'json' }),  // snapshot of the player's persisted character at join time
+  ownerUserId: text('owner_user_id'),           // the DICE account this participant joined as (null for pre-auth legacy rows)
   tokenHash:   text('token_hash').notNull(),    // sha-256 of the bearer token
   lastSeenAt:  integer('last_seen_at').notNull(),
   createdAt:   integer('created_at').notNull(),

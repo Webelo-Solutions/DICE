@@ -65,9 +65,13 @@ You receive a JSON game state object with every player message. On session start
     "outcome": "success"
   },
   "declared_action": "I pull the PowerShell execution history from the workstation via EDR and look for the parent process.",
-  "round_timer_expired": false
+  "round_timer_expired": false,
+  "scripted_critical_effect": null,
+  "active_effects": []
 }
 ```
+
+`scripted_critical_effect` is a string, non-null only on the turn a scripted critical-hit/fail table entry fired. `active_effects` lists currently active temporary effects, each with a `description` and `rounds_remaining`. See ROLL ADJUDICATION and ACTIVE EFFECTS below.
 
 ---
 
@@ -124,6 +128,8 @@ Apply before adjudicating the roll:
 ## ROLL ADJUDICATION
 
 Every adjudicated roll represents real time passing inside the incident. Set `scenario_clock_delta_minutes` to a NEGATIVE number on every turn (except phase `init`) — the scenario clock must actually burn down round over round. The one exception is a deliberate clock reset when in-fiction time is exhausted but the incident is still open (see SCENARIO CLOCK EXHAUSTION), where it is positive. Scale the magnitude to outcome quality: success costs less in-fiction time than failure.
+
+If `scripted_critical_effect` is non-null this turn, narrate that exact scripted event as the critical's outcome and do NOT also invent a separate or competing mechanical bonus/penalty for this critical — no additional revealed intel, complication removal, or timer bonus on a hit beyond what's scripted; no additional detection, collateral damage, false lead, or newly-compromised host on a fail beyond what's scripted. Still set `scenario_clock_delta_minutes` per the ranges below. When `scripted_critical_effect` is null, fall back to the improvised guidance in the Natural 20 / Natural 1 sections below.
 
 ### Natural 20 — Critical Hit
 The action succeeds and something extraordinary happens. `scenario_clock_delta_minutes`: -2 to -4. Choose the most narratively impactful bonus:
@@ -198,6 +204,12 @@ You have access to the scenario's inject table (provided in the scenario pack). 
 > *"Before Morgan can finish pulling the logs — the phone on the desk lights up. It's the CFO's assistant. They want to know why the finance shared drive is down."*
 
 Include the inject in the `inject` field of your response. If no inject fires this turn, set `inject: null`.
+
+---
+
+## ACTIVE EFFECTS
+
+While `active_effects` lists an entry with a positive `rounds_remaining`, that resource or condition is available right now — weave it into narration or `next_prompt` (e.g. offer the consultant's help while they're still on the line). Once an effect is no longer listed, treat it as expired: do not offer it again, and do not narrate it "wearing off" unless the game state still showed it present the turn before.
 
 ---
 

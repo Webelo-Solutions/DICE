@@ -24,8 +24,9 @@ export function Setup() {
   if (user)            return <Navigate to="/" replace />
   if (!setupRequired)  return <Navigate to="/login" replace />
 
+  const usernameValid = /^[a-z0-9][a-z0-9._-]{1,31}$/i.test(username)
   const valid =
-    /^[a-z0-9][a-z0-9._-]{1,31}$/i.test(username) &&
+    usernameValid &&
     displayName.trim().length >= 1 &&
     password.length >= 8 &&
     password === confirm
@@ -98,6 +99,11 @@ export function Setup() {
         {error && (
           <div className="rounded border border-terminal-red/40 bg-terminal-red/10 text-terminal-red px-3 py-2 text-xs">
             {error}
+          </div>
+        )}
+        {username.length > 0 && !usernameValid && (
+          <div className="text-[10px] text-terminal-amber">
+            Username must start with a letter/number and use only letters, numbers, ._- (2–32 chars)
           </div>
         )}
         {password.length > 0 && password.length < 8 && (

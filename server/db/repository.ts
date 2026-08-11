@@ -1,4 +1,4 @@
-import type { Character } from '../../src/types/game'
+import type { Character, CriticalInjectCatalogEntry } from '../../src/types/game'
 import type { Campaign, CustomScenario, SaveSlot } from '../../src/types/campaign'
 import type { SessionRecord } from '../../src/types/history'
 import type { OrgState } from '../../src/types/orgState'
@@ -41,10 +41,26 @@ export interface DiceRepository {
 
   // ── Custom scenarios ────────────────────────────────────
   // Returns: the user's own custom scenarios + ALL pack-imported scenarios
-  // (those are install-wide; pack_id IS NOT NULL).
+  // (those are install-wide; pack_id IS NOT NULL) + ALL admin-authored/global
+  // scenarios (is_global = true).
   listCustomScenarios(userId: string): CustomScenario[]
   upsertCustomScenario(scenario: CustomScenario, userId: string): void
   deleteCustomScenario(id: string, userId: string): void
+
+  // Admin/reporting: cross-user, unscoped access to every custom scenario
+  // (used by the admin scenario editor). adminUpsertCustomScenario always
+  // marks the row is_global so it's visible to every user afterward.
+  listAllCustomScenarios(): CustomScenario[]
+  adminUpsertCustomScenario(scenario: CustomScenario): void
+  adminDeleteCustomScenario(id: string): void
+
+  // ── Injects catalog ──────────────────────────────────────
+  // Global, install-wide critical-hit/fail inject entries managed via the
+  // admin panel — scenarios reference these by id rather than embedding them.
+  listInjectsCatalog(): CriticalInjectCatalogEntry[]
+  getInjectCatalogEntry(id: string): CriticalInjectCatalogEntry | null
+  upsertInjectCatalogEntry(entry: CriticalInjectCatalogEntry): void
+  deleteInjectCatalogEntry(id: string): void
 
   // ── Content packs ───────────────────────────────────────
   listContentPacks(): ContentPackRow[]
@@ -89,7 +105,6 @@ export interface DiceRepository {
   getParticipantByTokenHash(tokenHash: string): ParticipantRow | null
   listParticipants(roomId: string): ParticipantRow[]
   touchParticipant(id: string): void
-  setParticipantCharacter(id: string, characterId: string | null): void
 
   getRoomSession(roomId: string): RoomSessionRow | null
   upsertRoomSession(roomId: string, session: unknown, feed: unknown): void

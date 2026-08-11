@@ -12,6 +12,7 @@ import {
   participants,
   roomSessions,
   contentPacks,
+  injectsCatalog,
   users,
   authSessions,
 } from './schema'
@@ -19,7 +20,7 @@ import type {
   DiceRepository, RoomRow, RoomInsert, ParticipantRow, ParticipantInsert, RoomSessionRow, ContentPackRow,
   UserRow, UserInsert, AuthSessionRow, AuthSessionInsert,
 } from './repository'
-import type { Character } from '../../src/types/game'
+import type { Character, CriticalInjectCatalogEntry } from '../../src/types/game'
 import type { Campaign, CustomScenario, SaveSlot } from '../../src/types/campaign'
 import type { Dicepack } from '../../src/content/dicepackSchema'
 import type { SessionRecord } from '../../src/types/history'
@@ -81,11 +82,15 @@ export class SqliteRepository implements DiceRepository {
   }
 
   // ── Custom scenarios ────────────────────────────────────
-  // Lists user-owned scenarios PLUS all pack-imported scenarios (which are
-  // install-wide and visible to every user on the install).
+  // Lists user-owned scenarios PLUS all pack-imported scenarios (install-wide,
+  // pack_id set) PLUS all admin-authored/global scenarios (is_global = true).
   listCustomScenarios(userId: string): CustomScenario[] {
     return this.db.select().from(customScenarios)
-      .where(or(eq(customScenarios.ownerUserId, userId), isNotNull(customScenarios.packId)))
+      .where(or(
+        eq(customScenarios.ownerUserId, userId),
+        isNotNull(customScenarios.packId),
+        eq(customScenarios.isGlobal, true),
+      ))
       .all().map((r) => r.data as CustomScenario)
   }
   upsertCustomScenario(s: CustomScenario, userId: string): void {
@@ -102,6 +107,46 @@ export class SqliteRepository implements DiceRepository {
     // they're removed via the content-pack uninstall flow.
     this.db.delete(customScenarios)
       .where(and(eq(customScenarios.id, id), eq(customScenarios.ownerUserId, userId))).run()
+  }
+
+  // Admin: unscoped access to every custom scenario, for the admin scenario editor.
+  listAllCustomScenarios(): CustomScenario[] {
+    return this.db.select().from(customScenarios).all().map((r) => r.data as CustomScenario)
+  }
+  adminUpsertCustomScenario(s: CustomScenario): void {
+    const now = Date.now()
+    const data = { ...s, isGlobal: true }
+    this.db.insert(customScenarios).values({
+      id: s.id, title: s.title, difficulty: s.difficulty, data, updatedAt: now, isGlobal: true,
+    }).onConflictDoUpdate({
+      target: customScenarios.id,
+      set: { title: s.title, difficulty: s.difficulty, data, updatedAt: now, isGlobal: true },
+    }).run()
+  }
+  adminDeleteCustomScenario(id: string): void {
+    this.db.delete(customScenarios).where(eq(customScenarios.id, id)).run()
+  }
+
+  // ── Injects catalog ─────────────────────────────────────
+  // Install-wide, no owner/pack scoping — same category as content packs.
+  listInjectsCatalog(): CriticalInjectCatalogEntry[] {
+    return this.db.select().from(injectsCatalog).all().map((r) => ({
+      id: r.id, kind: r.kind as CriticalInjectCatalogEntry['kind'], ...(r.data as object),
+    })) as CriticalInjectCatalogEntry[]
+  }
+  getInjectCatalogEntry(id: string): CriticalInjectCatalogEntry | null {
+    const r = this.db.select().from(injectsCatalog).where(eq(injectsCatalog.id, id)).get()
+    if (!r) return null
+    return { id: r.id, kind: r.kind as CriticalInjectCatalogEntry['kind'], ...(r.data as object) } as CriticalInjectCatalogEntry
+  }
+  upsertInjectCatalogEntry(entry: CriticalInjectCatalogEntry): void {
+    const { id, kind, ...content } = entry
+    const now = Date.now()
+    this.db.insert(injectsCatalog).values({ id, kind, data: content, updatedAt: now })
+      .onConflictDoUpdate({ target: injectsCatalog.id, set: { kind, data: content, updatedAt: now } }).run()
+  }
+  deleteInjectCatalogEntry(id: string): void {
+    this.db.delete(injectsCatalog).where(eq(injectsCatalog.id, id)).run()
   }
 
   // ── Content packs ───────────────────────────────────────
@@ -277,9 +322,6 @@ export class SqliteRepository implements DiceRepository {
   }
   touchParticipant(id: string): void {
     this.db.update(participants).set({ lastSeenAt: Date.now() }).where(eq(participants.id, id)).run()
-  }
-  setParticipantCharacter(id: string, characterId: string | null): void {
-    this.db.update(participants).set({ characterId }).where(eq(participants.id, id)).run()
   }
 
   getRoomSession(roomId: string): RoomSessionRow | null {

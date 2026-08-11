@@ -7,6 +7,8 @@ import type { ScenarioPack, ScenarioAct, Inject, Clue } from '../types/game'
 import type { Campaign, CustomScenario } from '../types/campaign'
 import type { OrgProfile } from '../types/orgProfile'
 import { INITIAL_ORG_PROFILE, ORG_PROFILE_CHOICES } from '../types/orgProfile'
+import { Field, SectionTitle, IconBtn, inputCls, labelCls } from '../components/formAtoms'
+import { CriticalInjectIdPicker } from '../components/CriticalInjectIdPicker'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -36,7 +38,7 @@ function blankInject(): Inject {
   return { id: uid(), act: 1, trigger: 'discretion', description: '', mechanicalEffect: '' }
 }
 
-function blankScenario(): CustomScenario {
+export function blankScenario(): CustomScenario {
   const now = Date.now()
   return {
     id:                 'CUSTOM-' + Math.random().toString(36).slice(2, 6).toUpperCase(),
@@ -119,61 +121,20 @@ const ORG_PROFILE_GROUPS: Array<{ title: string; fields: Array<{ key: keyof Omit
   },
 ]
 
-// ─── Shared UI atoms ──────────────────────────────────────────────────────────
-
-const inputCls = `w-full bg-transparent border border-terminal-border focus:border-terminal-green
-  text-white text-sm px-3 py-2 rounded focus:outline-none placeholder-terminal-dim transition-colors`
-
-const labelCls = 'text-[10px] text-terminal-dim tracking-widest uppercase mb-1 block'
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className={labelCls}>{label}</label>
-      {children}
-    </div>
-  )
-}
-
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-3 mb-4">
-      <span className="text-xs font-bold text-terminal-green tracking-widest uppercase">{children}</span>
-      <div className="flex-1 h-px bg-terminal-border" />
-    </div>
-  )
-}
-
-function IconBtn({
-  onClick, title, children, danger, disabled,
-}: { onClick: () => void; title?: string; children: React.ReactNode; danger?: boolean; disabled?: boolean }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      disabled={disabled}
-      className={`px-1.5 py-0.5 rounded border text-[11px] transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
-        danger
-          ? 'border-terminal-red/30 text-terminal-red/60 hover:text-terminal-red hover:border-terminal-red/60'
-          : 'border-terminal-border text-terminal-dim hover:text-white hover:border-terminal-dim'
-      }`}
-    >
-      {children}
-    </button>
-  )
-}
-
 // ─── Scenario Editor Form ────────────────────────────────────────────────────
+// Exported so the admin scenario editor (src/pages/AdminScenarios.tsx) can
+// reuse this exact form — it's already fully decoupled from data source via
+// props (initial/onSave/onDelete), so the admin page just points those at the
+// global/unscoped scenario API instead of the owner-scoped campaign store.
 
-interface SEProps {
+export interface SEProps {
   initial:   CustomScenario
   onSave:    (s: CustomScenario) => void
   onDelete?: () => void
   isNew:     boolean
 }
 
-function ScenarioEditorForm({ initial, onSave, onDelete, isNew }: SEProps) {
+export function ScenarioEditorForm({ initial, onSave, onDelete, isNew }: SEProps) {
   const [sc, setSc] = useState<CustomScenario>(initial)
 
   // Reset form when a different scenario is selected
@@ -216,6 +177,12 @@ function ScenarioEditorForm({ initial, onSave, onDelete, isNew }: SEProps) {
     setField('injects', sc.injects.map((inj, idx) => idx === i ? { ...inj, ...updates } : inj))
   const addInject = () => setField('injects', [...sc.injects, blankInject()])
   const delInject = (i: number) => setField('injects', sc.injects.filter((_, idx) => idx !== i))
+
+  // ── Critical-roll inject id toggles (picking catalog entries, not authoring them) ──
+  const toggleCriticalInjectId = (key: 'criticalHitInjectIds' | 'criticalFailInjectIds', id: string) => {
+    const current = sc[key] ?? []
+    setField(key, current.includes(id) ? current.filter((existing) => existing !== id) : [...current, id])
+  }
 
   const handleSave = () => onSave({ ...sc, updatedAt: Date.now() })
 
@@ -423,6 +390,18 @@ function ScenarioEditorForm({ initial, onSave, onDelete, isNew }: SEProps) {
           + Add Inject
         </button>
       </div>
+
+      {/* ── Critical Roll Injects ── */}
+      <CriticalInjectIdPicker
+        heading="Critical Hit Injects" kind="critical_hit"
+        selectedIds={sc.criticalHitInjectIds ?? []} npcRoles={sc.npcRoles ?? []}
+        onToggle={(id) => toggleCriticalInjectId('criticalHitInjectIds', id)}
+      />
+      <CriticalInjectIdPicker
+        heading="Critical Fail Injects" kind="critical_fail"
+        selectedIds={sc.criticalFailInjectIds ?? []} npcRoles={sc.npcRoles ?? []}
+        onToggle={(id) => toggleCriticalInjectId('criticalFailInjectIds', id)}
+      />
 
       {/* ── Actions ── */}
       <div className="flex items-center gap-3 pt-2 border-t border-terminal-border">
@@ -803,6 +782,12 @@ export function CampaignBuilder() {
         activeComplications:    [],
         lastRoll:               null,
         roundTimerExpired:      false,
+        activeEffects:          [],
+        scriptedCriticalEffect: null,
+        critHitInjectsDrawn:    [],
+        critFailInjectsDrawn:   [],
+        resolvedCriticalHitInjects:  [],
+        resolvedCriticalFailInjects: [],
         phase:                  'init',
         status:                 'setup',
         timerDifficulty:        'analyst',

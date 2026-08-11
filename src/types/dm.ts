@@ -102,6 +102,11 @@ export interface DMRequestPayload {
   } | null
   declaredAction:    string
   roundTimerExpired: boolean
+  // Non-null only on the turn a scripted critical-hit/fail table entry fired
+  // (see CriticalInjectEntry) — tells the DM to narrate this exact event
+  // instead of inventing a competing crit bonus/penalty.
+  scriptedCriticalEffect: string | null
+  activeEffects: { description: string; roundsRemaining: number }[]
   orgContext: {
     securityPosture:       number
     sessionsPlayed:        number

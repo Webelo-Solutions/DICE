@@ -1,6 +1,8 @@
 import { useUserStore } from '../store/userStore'
 import { downloadFile } from './client'
 import type { SessionRecord } from '../types/history'
+import type { CriticalInjectCatalogEntry } from '../types/game'
+import type { CustomScenario } from '../types/campaign'
 
 // Sanitized user shape returned by /api/admin/users — never includes password
 // hash. Mirrors server/auth/admin-routes.ts → userPublic().
@@ -57,4 +59,18 @@ export const apiAdmin = {
   getAnalytics: () => call<{ sessions: Array<SessionRecord & { ownerUserId: string | null }>; cadenceDays: number }>('/analytics', 'GET'),
   setCadenceDays: (cadenceDays: number) => call<{ cadenceDays: number }>('/analytics/cadence-days', 'PUT', { cadenceDays }),
   downloadTeamCsv: () => downloadFile('/admin/analytics/export.csv', 'DICE-Program-Session-History.csv'),
+
+  // Injects catalog — full CRUD (regular users only get the read-only
+  // GET /api/injects-catalog via src/api/client.ts).
+  listInjectsCatalog: () => call<CriticalInjectCatalogEntry[]>('/injects-catalog', 'GET'),
+  upsertInjectCatalogEntry: (entry: CriticalInjectCatalogEntry) =>
+    call<CriticalInjectCatalogEntry>(`/injects-catalog/${encodeURIComponent(entry.id)}`, 'PUT', entry),
+  deleteInjectCatalogEntry: (id: string) =>
+    call<{ deleted: string }>(`/injects-catalog/${encodeURIComponent(id)}`, 'DELETE'),
+
+  // Scenarios — full editor, unscoped (every scenario on the install, not just
+  // the caller's own). Saves always mark the scenario is_global.
+  listAllScenarios: () => call<CustomScenario[]>('/scenarios', 'GET'),
+  upsertScenario: (s: CustomScenario) => call<CustomScenario>(`/scenarios/${encodeURIComponent(s.id)}`, 'PUT', s),
+  deleteScenario: (id: string) => call<{ deleted: string }>(`/scenarios/${encodeURIComponent(id)}`, 'DELETE'),
 }

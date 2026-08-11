@@ -1,4 +1,4 @@
-import type { Character } from '../types/game'
+import type { Character, CriticalInjectCatalogEntry } from '../types/game'
 import type { Campaign, CustomScenario, SaveSlot } from '../types/campaign'
 import type { SessionRecord } from '../types/history'
 import type { OrgState } from '../types/orgState'
@@ -81,6 +81,9 @@ export const api = {
   listCustomScenarios:  () => req<CustomScenario[]>('/custom-scenarios'),
   upsertCustomScenario: (s: CustomScenario) => put<CustomScenario>(`/custom-scenarios/${encodeURIComponent(s.id)}`, s),
   deleteCustomScenario: (id: string) => del(`/custom-scenarios/${encodeURIComponent(id)}`),
+
+  // ── Injects catalog (read-only here; management is admin-gated) ──
+  listInjectsCatalog: () => req<CriticalInjectCatalogEntry[]>('/injects-catalog'),
 
   // ── Content packs ──
   listContentPacks: () => req<ContentPackSummary[]>('/content-packs'),

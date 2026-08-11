@@ -26,9 +26,13 @@ installer/version.iss
 *.sqlite
 *.sqlite3
 
-# ── Generated documents (regenerate with `npm run build:docs`) ────────────────
+# ── Generated documents (regenerate with `npm run build:docs` / `build:uat`) ──
 docs/*.docx
 docs/*.pdf
+docs/*.xlsx
+
+# ── Compiled installer binaries (regenerate — see INSTALL_BUILD.md) ───────────
+installer/output/
 
 # ── Secrets / local config ────────────────────────────────────────────────────
 # (DICE keeps the LLM API key in the browser's localStorage, not in files — but

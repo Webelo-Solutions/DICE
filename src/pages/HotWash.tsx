@@ -265,6 +265,7 @@ export function HotWash() {
               { label: 'Critical Hits',    value: result.criticalHits,    sub: 'natural 20s' },
               { label: 'Critical Fails',   value: result.criticalFails,   sub: 'natural 1s' },
               { label: 'Injects Survived', value: result.injectsSurvived, sub: 'curveballs' },
+              { label: 'Critical Injects', value: result.criticalInjectsFired, sub: 'scripted crit events' },
               { label: 'Hints Used',       value: result.hintsUsed,       sub: result.hintsUsed > 0 ? 'knowledge gaps noted' : 'independent' },
               { label: 'Timer Expiries',   value: result.timerExpiries,   sub: 'rounds over limit' },
               { label: 'XP Awarded',       value: result.xpAwarded,       sub: 'team total' },

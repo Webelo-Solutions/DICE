@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGameStore } from '../store/gameStore'
 import { useRoomStore } from '../store/roomStore'
 import { disconnectRoom } from '../api/roomSocket'
 import { roomApi } from '../api/rooms'
 import { ActionMenu } from '../components/ActionMenu'
+import { VoiceDMButton } from '../components/VoiceDMButton'
+import { useVoiceDM } from '../hooks/useVoiceDM'
 import type { StatKey } from '../types/game'
 
 const FEED_COLOR: Record<string, string> = {
@@ -34,6 +36,22 @@ export function RoomPlayer() {
 
   const [busy, setBusy]   = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Narrate the facilitator's streamed DM text as it arrives. voiceStore is a
+  // per-browser persisted preference, so each player mutes/configures their
+  // own narrator independently — no server involvement needed.
+  const { speakChunk, flushChunks } = useVoiceDM()
+  const lastSpokenLenRef = useRef(0)
+  useEffect(() => {
+    if (streaming) {
+      const newChars = streaming.slice(lastSpokenLenRef.current)
+      lastSpokenLenRef.current = streaming.length
+      if (newChars) speakChunk(newChars)
+    } else if (lastSpokenLenRef.current > 0) {
+      flushChunks()
+      lastSpokenLenRef.current = 0
+    }
+  }, [streaming, speakChunk, flushChunks])
 
   if (!membership) { navigate('/'); return null }
   const leave = () => { disconnectRoom(); useRoomStore.getState().clearMembership(); navigate('/') }
@@ -82,6 +100,7 @@ export function RoomPlayer() {
         <div className="ml-auto flex items-center gap-4 text-xs">
           <div className="text-center"><div className="text-terminal-amber font-bold font-mono">{session.scenarioClockRemaining}</div><div className="text-[9px] text-terminal-dim">min left</div></div>
           <div className="text-center"><div className="text-white font-bold">A{session.act}·R{session.round}</div><div className="text-[9px] text-terminal-dim">act·round</div></div>
+          <VoiceDMButton />
           <span className={`text-[10px] px-2 py-0.5 rounded border ${connected ? 'border-terminal-green/40 bg-terminal-green/10 text-terminal-green' : 'border-terminal-amber/40 bg-terminal-amber/10 text-terminal-amber'}`}>
             {connected ? '● live' : '○ reconnecting'}
           </span>

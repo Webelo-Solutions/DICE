@@ -7,6 +7,10 @@ export interface CustomScenario extends ScenarioPack {
   isCustom:  true
   createdAt: number
   updatedAt: number
+  // Admin-authored/curated, visible to every user regardless of owner or pack
+  // provenance (see server/db/schema.ts customScenarios.isGlobal). Absent/false
+  // for ordinary player-authored scenarios.
+  isGlobal?: boolean
 }
 
 // ─── Save Slot ────────────────────────────────────────────────────────────────

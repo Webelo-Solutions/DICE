@@ -73,6 +73,11 @@ export interface Character {
   level:    number
   xp:       number
   headshot?: string   // base64 data URL
+  // Set when a room-hosted session awards enough XP to cross a level
+  // threshold — the skill/trait/stat choice itself is deferred to when the
+  // player next views their roster (solo mode resolves this immediately via
+  // SessionEnd's LevelUpModal instead, so this stays unset there).
+  pendingLevelUp?: { newLevel: number } | null
 }
 
 // ─── Scenario ─────────────────────────────────────────────────────────────────
@@ -90,6 +95,50 @@ export interface Inject {
   trigger:          'mandatory' | 'discretion'
   description:      string
   mechanicalEffect: string
+}
+
+// Scenario-level (not act-scoped) tables drawn on a natural 20 / natural 1
+// skill-check roll. Unlike Inject.mechanicalEffect (free text a human/DM
+// interprets), these fields are applied directly by resolveCriticalInject in
+// gameStore.ts.
+export interface CriticalInjectNPCEffect {
+  role:             NPCRole
+  trustDelta:       number
+  // Only flips NPCState.introduced to true when explicitly set — unlike the
+  // DM's own npcUpdates handling, which always reveals the NPC on any update.
+  forceIntroduced?: boolean
+  awarenessAdded?:  string[]
+}
+
+export interface CriticalInjectTemporaryEffect {
+  description:    string   // surfaced to the DM every turn while active
+  durationRounds: number   // available through session.round + durationRounds
+}
+
+export interface CriticalInjectEntry {
+  id:                     string
+  description:            string   // dramatic feed text, appended verbatim
+  advanceKillChainStage?: boolean
+  complicationsAdded?:    string[]
+  complicationsRemoved?:  string[]
+  npcEffect?:             CriticalInjectNPCEffect
+  temporaryEffect?:       CriticalInjectTemporaryEffect
+}
+
+// As stored/managed in the global injects catalog (admin-curated, install-wide
+// — see server/db/schema.ts injectsCatalog). Scenarios reference catalog
+// entries by id (ScenarioPack.criticalHitInjectIds/criticalFailInjectIds)
+// rather than embedding them; `kind` says which table an entry belongs to.
+export interface CriticalInjectCatalogEntry extends CriticalInjectEntry {
+  kind: 'critical_hit' | 'critical_fail'
+}
+
+// A temporary effect currently in play, generalized beyond critical injects
+// (expires once session.round passes expiresRound).
+export interface ActiveEffect {
+  id:           string
+  description:  string
+  expiresRound: number
 }
 
 export interface Clue {
@@ -125,6 +174,12 @@ export interface ScenarioPack {
   // NPCs cast into this scenario. Omitted/empty = no stakeholders appear
   // (NPCs are hidden by default and opt-in per scenario). Phase 3 populates these.
   npcRoles?:          NPCRole[]
+  // References into the global injects catalog (CriticalInjectCatalogEntry),
+  // resolved into GameSession.resolvedCriticalHitInjects/resolvedCriticalFailInjects
+  // at initSession time. Omitted/empty, or ids that don't resolve = the DM
+  // improvises its own crit bonus/penalty as before.
+  criticalHitInjectIds?:  string[]
+  criticalFailInjectIds?: string[]
 }
 
 // ─── Timer Difficulty ─────────────────────────────────────────────────────────
@@ -164,6 +219,19 @@ export interface GameSession {
   activeComplications:       string[]
   lastRoll:                  RollRecord | null
   roundTimerExpired:         boolean
+  // Critical-inject state (see CriticalInjectEntry) — activeEffects are
+  // expiring temporary effects (cleared in advanceTurn); scriptedCriticalEffect
+  // is this turn's resolved description, consumed by buildPayload then reset
+  // to null; the drawn-id lists back the no-repeat-until-exhausted draw.
+  activeEffects:             ActiveEffect[]
+  scriptedCriticalEffect:    string | null
+  critHitInjectsDrawn:       string[]
+  critFailInjectsDrawn:      string[]
+  // Resolved once at initSession by looking up scenario.criticalHitInjectIds/
+  // criticalFailInjectIds against the global injects catalog — resolveCriticalInject
+  // reads these, not the scenario's raw id references.
+  resolvedCriticalHitInjects:  CriticalInjectEntry[]
+  resolvedCriticalFailInjects: CriticalInjectEntry[]
   phase:                     'init' | 'turn'
   // 'timeout' = the engine force-concluded the session because real elapsed
   // time blew past the scenario's estimatedMinutes well beyond what the DM's
@@ -207,6 +275,7 @@ export interface SessionResult {
   criticalHits:        number
   criticalFails:       number
   injectsSurvived:     number
+  criticalInjectsFired: number
   clockRemaining:      number
   roundsPlayed:        number
   // Audit fields

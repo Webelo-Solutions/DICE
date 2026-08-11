@@ -78,3 +78,17 @@
     z-index: 9999;
   }
 }
+
+/* Respect the OS-level reduced-motion preference for every CSS/Tailwind
+   animation and transition (framer-motion's motion.* components are handled
+   separately via <MotionConfig reducedMotion="user"> in App.tsx). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .scanlines::after {
+    display: none;
+  }
+}

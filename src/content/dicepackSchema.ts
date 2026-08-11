@@ -69,6 +69,34 @@ const InjectSchema = z.object({
   mechanicalEffect: str(1, 500),
 })
 
+const CriticalInjectNPCEffectSchema = z.object({
+  role:            zNpcRole,
+  trustDelta:      z.number().int().min(-100).max(100),
+  forceIntroduced: z.boolean().optional(),
+  awarenessAdded:  z.array(str(1, 200)).max(4).optional(),
+})
+
+const CriticalInjectTemporaryEffectSchema = z.object({
+  description:    str(1, 300),
+  durationRounds: z.number().int().min(1).max(10),
+})
+
+const CriticalInjectEntrySchema = z.object({
+  id:                    packItemId,
+  description:           str(1, 500),
+  advanceKillChainStage: z.boolean().optional(),
+  complicationsAdded:    z.array(str(1, 80)).max(4).optional(),
+  complicationsRemoved:  z.array(str(1, 80)).max(4).optional(),
+  npcEffect:             CriticalInjectNPCEffectSchema.optional(),
+  temporaryEffect:       CriticalInjectTemporaryEffectSchema.optional(),
+})
+
+// The catalog-managed shape (server/db/schema.ts injectsCatalog + the admin
+// panel's catalog CRUD routes) — an entry plus which table it belongs to.
+export const CriticalInjectCatalogEntrySchema = CriticalInjectEntrySchema.extend({
+  kind: z.enum(['critical_hit', 'critical_fail']),
+})
+
 const ActSchema = z.object({
   number:           z.number().int().min(1).max(8),
   seed:             str(1, 2000),
@@ -94,6 +122,11 @@ export const ScenarioSchema = z.object({
   acts:               z.array(ActSchema).min(1).max(8),
   injects:            z.array(InjectSchema).max(40),
   npcRoles:           z.array(zNpcRole).max(8).optional(),
+  // References into the global injects catalog — see CriticalInjectCatalogEntrySchema.
+  // Not cross-validated here (a dicepack is validated standalone; an id that
+  // doesn't resolve in this install's catalog just degrades to a no-op).
+  criticalHitInjectIds:  z.array(packItemId).max(20).optional(),
+  criticalFailInjectIds: z.array(packItemId).max(20).optional(),
 }).superRefine((sc, ctx) => {
   // Cross-reference: every act injectIds value must resolve to a real inject (§5.3).
   const injectIds = new Set(sc.injects.map((i) => i.id))
@@ -116,6 +149,23 @@ export const ScenarioSchema = z.object({
     }
     seen.add(inj.id)
   })
+  // Critical-inject references: ids unique within each list (duplicates would
+  // just mean the same catalog entry could be drawn twice in one shuffle,
+  // which resolveCriticalInject's draw-without-replacement logic doesn't
+  // expect). The npcEffect/npcRoles cross-check now happens in the admin UI
+  // at assignment time, since the schema no longer sees the entry and the
+  // scenario together (the entry lives in the catalog, not inline).
+  const checkIdList = (ids: string[] | undefined, path: 'criticalHitInjectIds' | 'criticalFailInjectIds') => {
+    const seen = new Set<string>()
+    ;(ids ?? []).forEach((id, i) => {
+      if (seen.has(id)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path, i], message: `duplicate id "${id}"` })
+      }
+      seen.add(id)
+    })
+  }
+  checkIdList(sc.criticalHitInjectIds, 'criticalHitInjectIds')
+  checkIdList(sc.criticalFailInjectIds, 'criticalFailInjectIds')
 })
 
 // ── Character (§6) ────────────────────────────────────────────────────────────

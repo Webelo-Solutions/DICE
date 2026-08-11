@@ -10,6 +10,8 @@ import { repository } from '../db/sqlite-repository'
 import { hashPassphrase, USERNAME_RE, MIN_PW_LEN, MAX_PW_LEN, REGISTRATION_CODE_KEY } from './tokens'
 import type { UserRow } from '../db/repository'
 import { toCsv } from '../reports/csv'
+import { CriticalInjectCatalogEntrySchema, ScenarioSchema } from '../../src/content/dicepackSchema'
+import type { CustomScenario } from '../../src/types/campaign'
 
 const VALID_ROLES = new Set(['admin', 'player'])
 const MIN_CODE_LEN = 4
@@ -185,6 +187,45 @@ export async function adminRoutes(app: FastifyInstance) {
     }
     repository.setKv(CADENCE_DAYS_KEY, days)
     return { cadenceDays: days }
+  })
+
+  // ── Injects catalog (management; the plain read route is GET /injects-catalog
+  // in server/routes.ts, available to every authenticated user) ─────────────
+  app.get('/admin/injects-catalog', admin, async () => repository.listInjectsCatalog())
+
+  app.put<{ Params: IdParam; Body: unknown }>('/admin/injects-catalog/:id', admin, async (req, reply) => {
+    const parsed = CriticalInjectCatalogEntrySchema.safeParse({ ...(req.body as object), id: req.params.id })
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid inject entry', details: parsed.error.issues })
+    repository.upsertInjectCatalogEntry(parsed.data)
+    return parsed.data
+  })
+
+  app.delete<{ Params: IdParam }>('/admin/injects-catalog/:id', admin, async (req) => {
+    repository.deleteInjectCatalogEntry(req.params.id)
+    return { deleted: req.params.id }
+  })
+
+  // ── Scenarios (full editor, admin-gated) ────────────────────────────────
+  // Operates on every custom scenario on the install (not just the caller's
+  // own) — always marks the row is_global so it becomes visible to everyone.
+  app.get('/admin/scenarios', admin, async () => repository.listAllCustomScenarios())
+
+  app.put<{ Params: IdParam; Body: unknown }>('/admin/scenarios/:id', admin, async (req, reply) => {
+    const parsed = ScenarioSchema.safeParse({ ...(req.body as object), id: req.params.id })
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid scenario', details: parsed.error.issues })
+    const existing = repository.listAllCustomScenarios().find((s) => s.id === req.params.id)
+    const now = Date.now()
+    const scenario = {
+      ...parsed.data, isCustom: true as const, isGlobal: true,
+      createdAt: existing?.createdAt ?? now, updatedAt: now,
+    } as unknown as CustomScenario
+    repository.adminUpsertCustomScenario(scenario)
+    return scenario
+  })
+
+  app.delete<{ Params: IdParam }>('/admin/scenarios/:id', admin, async (req) => {
+    repository.adminDeleteCustomScenario(req.params.id)
+    return { deleted: req.params.id }
   })
 
   // Bulk CSV across EVERY user on the install — the compliance/GRC export.

@@ -186,7 +186,7 @@ function PlayerRow({ player, sessionXp, prevRolls }: RowProps) {
             transition={{ duration: 0.5, ease: 'easeOut' }}
           />
         </div>
-        <span className="text-[9px] text-terminal-dim flex-shrink-0 w-12 text-right">
+        <span className="text-[11px] text-terminal-dim flex-shrink-0 w-12 text-right">
           {sessionXp.total > 0
             ? <span className="text-terminal-green">+{sessionXp.total}</span>
             : <span>0 XP</span>
@@ -195,7 +195,7 @@ function PlayerRow({ player, sessionXp, prevRolls }: RowProps) {
       </div>
 
       {/* XP detail */}
-      <div className="text-[8px] text-terminal-dim">
+      <div className="text-[10px] text-terminal-dim">
         {progress.maxLevel
           ? 'Max level reached'
           : `${totalXp} XP · ${progress.needed} to Lvl ${progress.level + 1}`
@@ -251,7 +251,7 @@ export function LiveXPScorecard({ players, feed }: Props) {
       {players.length > 1 && (
         <div className="mt-3 pt-2 border-t border-terminal-border flex items-center justify-between">
           <span className="text-[9px] text-terminal-dim uppercase tracking-widest">Team total</span>
-          <span className="text-[10px] font-bold text-terminal-green">+{totalSessionXp} XP</span>
+          <span className="text-xs font-bold text-terminal-green">+{totalSessionXp} XP</span>
         </div>
       )}
     </div>

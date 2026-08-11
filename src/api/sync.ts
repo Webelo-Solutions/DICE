@@ -2,6 +2,7 @@ import { api } from './client'
 import { useGameStore } from '../store/gameStore'
 import { useCampaignStore } from '../store/campaignStore'
 import { useRoomStore } from '../store/roomStore'
+import { useInjectsCatalogStore } from '../store/injectsCatalogStore'
 import { INITIAL_ORG_STATE, normalizeNpcReputation } from '../types/orgState'
 
 // In a room, the live session/feed are synced through the room (see roomSync.ts),
@@ -24,6 +25,7 @@ export async function hydrateFromApi(): Promise<void> {
     roster, library, sessionHistory, orgState, activeOrgProfile,
     session, feed, result,
     campaigns, customScenarios, saves,
+    injectsCatalog,
   ] = await Promise.all([
     api.listCharacters(),
     api.listLibraryCharacters(),
@@ -36,6 +38,7 @@ export async function hydrateFromApi(): Promise<void> {
     api.listCampaigns(),
     api.listCustomScenarios(),
     api.listSaves(),
+    api.listInjectsCatalog(),
   ])
 
   useGameStore.setState({
@@ -52,6 +55,13 @@ export async function hydrateFromApi(): Promise<void> {
   })
 
   useCampaignStore.setState({ campaigns, customScenarios, saves })
+  useInjectsCatalogStore.setState({ entries: injectsCatalog })
+}
+
+// Re-pull the injects catalog after an admin creates/edits/deletes an entry,
+// so the change is reflected without a page reload (same idea as refreshLibrary).
+export async function refreshInjectsCatalog(): Promise<void> {
+  useInjectsCatalogStore.setState({ entries: await api.listInjectsCatalog() })
 }
 
 // Re-pull the library collections (roster + custom scenarios) from the API after

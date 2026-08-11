@@ -59,6 +59,11 @@ export function buildPayload(
     lastRoll:          session.lastRoll,
     declaredAction,
     roundTimerExpired: session.roundTimerExpired,
+    scriptedCriticalEffect: session.scriptedCriticalEffect,
+    activeEffects: session.activeEffects.map((e) => ({
+      description:     e.description,
+      roundsRemaining: e.expiresRound - session.round + 1,
+    })),
     orgContext: orgState && orgState.sessionsPlayed > 0
       ? {
           securityPosture:       orgState.securityPosture,

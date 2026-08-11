@@ -79,6 +79,7 @@ export function GameSession() {
 
   const hasInitialized  = useRef(false)
   const lastNarLenRef   = useRef(0)
+  const hasEndedRoomRef = useRef(false)
 
   const commConfig = useGameStore((s) => s.commConfig)
 
@@ -87,6 +88,24 @@ export function GameSession() {
   const roomRole       = useRoomStore((s) => s.membership?.role)
   const roomStreaming  = useRoomStore((s) => s.streamingNarration)
   const [autoRoll, setAutoRoll] = useState(false)
+
+  // Speak the facilitator's own room-streamed narration too — it's already
+  // shown visually via NarrativeFeed (below) but was never fed to the voice
+  // narrator. Guarded to room mode only so solo mode's own speakChunk call
+  // sites (which stream from a direct AI call, not roomStreaming) aren't
+  // double-triggered.
+  const lastRoomSpokenLenRef = useRef(0)
+  useEffect(() => {
+    if (!roomRole) return
+    if (roomStreaming) {
+      const newChars = roomStreaming.slice(lastRoomSpokenLenRef.current)
+      lastRoomSpokenLenRef.current = roomStreaming.length
+      if (newChars) speakChunk(newChars)
+    } else if (lastRoomSpokenLenRef.current > 0) {
+      flushChunks()
+      lastRoomSpokenLenRef.current = 0
+    }
+  }, [roomStreaming, roomRole, speakChunk, flushChunks])
 
   const currentPlayer   = session?.players.find((p) => p.id === session.currentTurnPlayerId)
   const adversaryPlayer = session?.adversary
@@ -123,13 +142,30 @@ export function GameSession() {
         .reduce((sum, e) => sum + (OUTCOME_XP[e.outcome!] ?? 0), 0)
 
       const outcome = session.status === 'victory' ? 'victory' : session.status === 'timeout' ? 'partial' : 'defeat'
+      const finalXpAwarded = Math.max(xpAwarded, outcome === 'victory' ? 50 : 20)
+
+      // Room mode: the facilitator's own roster doesn't contain the players'
+      // characters (each belongs to its own owner's account), so endSession's
+      // local roster XP write below is a no-op for them. Write their earned
+      // XP back to their own persisted characters server-side instead.
+      const membership = useRoomStore.getState().membership
+      if (membership?.role === 'facilitator' && !hasEndedRoomRef.current) {
+        hasEndedRoomRef.current = true
+        const xpEach = Math.round(finalXpAwarded / Math.max(1, session.players.length))
+        roomApi.endRoom(
+          membership.code, membership.token,
+          session.players.map((p) => ({ characterId: p.id, xpAwarded: xpEach })),
+        ).catch((e) => console.error('[room] failed to write back player XP', e))
+      }
 
       endSession({
         outcome,
-        xpAwarded:          Math.max(xpAwarded, outcome === 'victory' ? 50 : 20),
+        xpAwarded:          finalXpAwarded,
         criticalHits:       critHits,
         criticalFails:      critFails,
         injectsSurvived:    feed.filter((e) => e.type === 'inject').length,
+        criticalInjectsFired: feed.filter((e) => e.type === 'inject' &&
+          (e.speaker === '! INJECT [CRITICAL HIT]' || e.speaker === '! INJECT [CRITICAL FAIL]')).length,
         clockRemaining:     session.scenarioClockRemaining,
         roundsPlayed:       session.round,
         startedAt:          session.startedAt,
@@ -253,7 +289,10 @@ export function GameSession() {
         timestamp: Date.now(),
       })
       setStreamingText('')
-      useGameStore.setState({ isDMThinking: false })
+      useGameStore.setState((s) => ({
+        isDMThinking: false,
+        session: s.session ? { ...s.session, scriptedCriticalEffect: null } : null,
+      }))
     }
   }
 
@@ -318,6 +357,10 @@ export function GameSession() {
         commConfig,
         `🎲 ${currentPlayer.name} rolled ${roll.total} vs DC ${dc} — ${outcomeLabel}`,
       )
+    }
+
+    if (outcome === 'critical_hit' || outcome === 'critical_fail') {
+      useGameStore.getState().resolveCriticalInject(outcome)
     }
 
     useGameStore.setState((s) => ({
@@ -601,10 +644,8 @@ export function GameSession() {
       {/* ── Single unified top bar ── */}
       <div className="flex-shrink-0 border-b border-terminal-border bg-terminal-surface">
 
-        {/* Row 1 — live state: identity · act/round · objective.
-            Extra right padding reserves the corner for the fixed UserChip
-            (Account/Admin/Sign out) so the objective truncates before it. */}
-        <div className="pl-4 pr-[23rem] py-2 flex items-center gap-4">
+        {/* Row 1 — live state: identity · act/round · objective. */}
+        <div className="pl-4 pr-4 py-2 flex items-center gap-4">
 
           {/* Brand + title — click to return to landing */}
           <button
@@ -870,12 +911,11 @@ export function GameSession() {
                   ) : (
                     <>
                       <span>?</span>
-                      <span>Hint</span>
+                      <span>
+                        Hint{session.timerDifficulty === 'analyst' ? ' (+2 DC)' : ''}
+                      </span>
                       {session.timerDifficulty === 'analyst' && dcPenalty > 0 && (
-                        <span className="text-terminal-red text-[10px]">DC +{dcPenalty}</span>
-                      )}
-                      {session.timerDifficulty === 'analyst' && (
-                        <span className="text-[10px] opacity-60">+2 DC</span>
+                        <span className="text-terminal-red text-[10px]">+{dcPenalty} used</span>
                       )}
                     </>
                   )}
@@ -935,10 +975,10 @@ export function GameSession() {
                 <div className={`text-4xl font-black tabular-nums mb-1 ${outcomeTierColor(lastRoll.outcome as OutcomeTier)}`}>
                   {lastRoll.total}
                 </div>
-                <div className="text-[10px] text-terminal-dim mb-1.5">
+                <div className="text-xs text-terminal-dim mb-1.5">
                   {lastRoll.raw} {lastRoll.modifier >= 0 ? '+' : ''}{lastRoll.modifier} vs DC {lastRoll.dc}
                 </div>
-                <div className={`text-[10px] font-bold tracking-widest uppercase ${outcomeTierColor(lastRoll.outcome as OutcomeTier)}`}>
+                <div className={`text-xs font-bold tracking-widest uppercase ${outcomeTierColor(lastRoll.outcome as OutcomeTier)}`}>
                   {outcomeTierLabel(lastRoll.outcome as OutcomeTier)}
                 </div>
               </div>
@@ -963,7 +1003,7 @@ export function GameSession() {
                 return (
                   <div
                     key={stage}
-                    className={`text-[10px] px-2 py-1 rounded flex items-center gap-1.5 ${
+                    className={`text-xs px-2 py-1 rounded flex items-center gap-1.5 ${
                       isCurrent
                         ? 'bg-terminal-red/20 text-terminal-red border border-terminal-red/30'
                         : reached
@@ -975,7 +1015,7 @@ export function GameSession() {
                     <div className="min-w-0">
                       <div className="capitalize">{stage.replace(/_/g, ' ')}</div>
                       {tactic && (
-                        <div className="text-[8px] opacity-50 font-mono tracking-wide">{tactic.id}</div>
+                        <div className="text-[10px] opacity-60 font-mono tracking-wide">{tactic.id}</div>
                       )}
                     </div>
                   </div>
@@ -1179,6 +1219,7 @@ export function GameSession() {
                                     ? 'text-terminal-amber'
                                     : adversaryClassDef.color
                                 }`}>
+                                  {opt.detectionDC <= 10 ? '⚠ ' : opt.detectionDC <= 14 ? '△ ' : ''}
                                   {opt.detectionDC}
                                 </span>
                               </div>

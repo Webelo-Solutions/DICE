@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence, useAnimation } from 'framer-motion'
-import type { Character, OutcomeTier, RollRecord } from '../types/game'
+import type { Character, RollRecord } from '../types/game'
 import { rollD20 } from '../engine/dice'
+import { OUTCOME_DISPLAY } from '../engine/outcomes'
 
 interface Props {
   player:         Character
@@ -12,14 +13,6 @@ interface Props {
 }
 
 const D20_FACES = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]
-
-const OUTCOME_DISPLAY: Record<OutcomeTier, { label: string; glyph: string }> = {
-  critical_hit:  { label: 'CRITICAL HIT',  glyph: '⚡' },
-  success:       { label: 'SUCCESS',        glyph: '✓'  },
-  partial:       { label: 'PARTIAL',        glyph: '~'  },
-  failure:       { label: 'FAILURE',        glyph: '✗'  },
-  critical_fail: { label: 'CRITICAL FAIL',  glyph: '☠'  },
-}
 
 // Hexagon clip-path — used for the die face
 const HEX = 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
@@ -396,9 +389,10 @@ export function DiceRollOverlay({ player, action, lastRoll, onRollComplete, onDi
                     <div className="text-[9px] text-terminal-dim tracking-widest uppercase mb-0.5">
                       vs DC {lastRoll.dc}
                     </div>
-                    <div className={`text-2xl font-bold tabular-nums ${
+                    <div className={`flex items-center justify-center gap-1 text-2xl font-bold tabular-nums ${
                       lastRoll.total >= lastRoll.dc ? 'text-terminal-green' : 'text-terminal-red'
                     }`}>
+                      <span className="text-sm">{lastRoll.total >= lastRoll.dc ? '✓' : '✗'}</span>
                       {lastRoll.total}
                     </div>
                   </div>

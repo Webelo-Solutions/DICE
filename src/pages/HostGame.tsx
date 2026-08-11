@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { roomApi } from '../api/rooms'
 import { useRoomStore } from '../store/roomStore'
 import { connectRoom } from '../api/roomSocket'
+import { useToastStore } from '../store/toastStore'
+import { useUserStore } from '../store/userStore'
 
 const inputCls = `w-full bg-terminal-surface border border-terminal-border focus:border-terminal-green
   text-white text-sm px-3 py-2.5 rounded focus:outline-none placeholder-terminal-dim transition-colors`
@@ -12,12 +14,13 @@ export function HostGame() {
   const [name, setName] = useState('')
   const [passphrase, setPassphrase] = useState('')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const pushToast = useToastStore((s) => s.push)
 
   const host = async () => {
-    setBusy(true); setError(null)
+    setBusy(true)
     try {
-      const m = await roomApi.create(name.trim() || 'DICE Session', passphrase)
+      const userToken = useUserStore.getState().token!
+      const m = await roomApi.create(name.trim() || 'DICE Session', passphrase, userToken)
       useRoomStore.getState().setMembership({
         code: m.room.code, token: m.token, role: m.participant.role,
         participantId: m.participant.id, displayName: m.participant.displayName, roomName: m.room.name,
@@ -25,7 +28,7 @@ export function HostGame() {
       connectRoom(m.room.code, m.token)
       navigate('/lobby')
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      pushToast(e instanceof Error ? e.message : String(e), 'error')
     } finally { setBusy(false) }
   }
 
@@ -49,8 +52,6 @@ export function HostGame() {
             <p className="text-[10px] text-terminal-dim/60 mt-1">Used to reclaim facilitator control from another device. Keep it private.</p>
           </div>
         </div>
-
-        {error && <div className="text-xs text-terminal-red border border-terminal-red/30 bg-terminal-red/10 rounded px-3 py-2">{error}</div>}
 
         <button onClick={host} disabled={busy || passphrase.length < 4}
           className="w-full py-3 rounded border border-terminal-green bg-terminal-green/10 text-terminal-green

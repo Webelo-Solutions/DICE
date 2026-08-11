@@ -1,5 +1,5 @@
 import type { RoomMembership, Room, Participant } from '../types/room'
-import type { CharacterClass, GameSession } from '../types/game'
+import type { GameSession } from '../types/game'
 import type { ProviderConfig } from '../types/provider'
 import type { DMResponse } from '../types/dm'
 import type { OrgState } from '../types/orgState'
@@ -16,21 +16,35 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const roomApi = {
-  create: (name: string, passphrase: string) =>
-    req<RoomMembership>('/rooms', { method: 'POST', body: JSON.stringify({ name, passphrase }) }),
+  // Room membership (create/join/claim-facilitator) authenticates with the
+  // caller's DICE account bearer token — every page that reaches these calls
+  // is already behind RequireAuth, so this just threads that identity through
+  // to the server, which uses it to own the resulting participant row.
+  create: (name: string, passphrase: string, userToken: string) =>
+    req<RoomMembership>('/rooms', {
+      method: 'POST', headers: { authorization: `Bearer ${userToken}` }, body: JSON.stringify({ name, passphrase }),
+    }),
 
-  join: (code: string, displayName: string, charClass: CharacterClass) =>
-    req<RoomMembership>(`/rooms/${encodeURIComponent(code)}/join`, { method: 'POST', body: JSON.stringify({ displayName, class: charClass }) }),
+  // Players bring one of their own persisted roster characters (characterId)
+  // rather than generating a throwaway one from a class pick.
+  join: (code: string, userToken: string, characterId: string) =>
+    req<RoomMembership>(`/rooms/${encodeURIComponent(code)}/join`, {
+      method: 'POST', headers: { authorization: `Bearer ${userToken}` }, body: JSON.stringify({ characterId }),
+    }),
 
-  claimFacilitator: (code: string, passphrase: string, displayName?: string) =>
-    req<RoomMembership>(`/rooms/${encodeURIComponent(code)}/claim-facilitator`, { method: 'POST', body: JSON.stringify({ passphrase, displayName }) }),
+  claimFacilitator: (code: string, passphrase: string, userToken: string, displayName?: string) =>
+    req<RoomMembership>(`/rooms/${encodeURIComponent(code)}/claim-facilitator`, {
+      method: 'POST', headers: { authorization: `Bearer ${userToken}` }, body: JSON.stringify({ passphrase, displayName }),
+    }),
 
   getLobby: (code: string) =>
     req<{ room: Room; participants: Participant[] }>(`/rooms/${encodeURIComponent(code)}`),
 
-  claimCharacter: (code: string, token: string, characterId: string | null) =>
-    req<{ ok: boolean }>(`/rooms/${encodeURIComponent(code)}/claim-character`, {
-      method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ characterId }),
+  // Writes session-earned XP back to each player's own persisted character
+  // (facilitator-only; uses the room participant token like /action, /dm).
+  endRoom: (code: string, roomToken: string, awards: { characterId: string; xpAwarded: number }[]) =>
+    req<{ ok: boolean }>(`/rooms/${encodeURIComponent(code)}/end`, {
+      method: 'POST', headers: { authorization: `Bearer ${roomToken}` }, body: JSON.stringify({ awards }),
     }),
 
   submitAction: (code: string, token: string, text: string) =>

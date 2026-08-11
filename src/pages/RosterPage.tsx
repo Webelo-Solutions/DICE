@@ -5,6 +5,7 @@ import { useRoomStore } from '../store/roomStore'
 import { roomApi } from '../api/rooms'
 import { CharacterCard } from '../components/CharacterCard'
 import { Tooltip } from '../components/Tooltip'
+import { LevelUpModal } from '../components/LevelUpModal'
 import type { TimerDifficulty } from '../types/game'
 import { TIMER_DIFFICULTY_SECONDS } from '../types/game'
 
@@ -42,7 +43,10 @@ const DIFFICULTIES: { value: TimerDifficulty; label: string; desc: string }[] = 
 
 export function RosterPage() {
   const navigate = useNavigate()
-  const { roster, library, addCharacter, removeCharacter, updateCharacter, initSession } = useGameStore()
+  const { roster, library, addCharacter, removeCharacter, updateCharacter, initSession, levelUpCharacter } = useGameStore()
+  // Characters that leveled up during a room-hosted session get their upgrade
+  // choice deferred here (room players don't get a live SessionEnd screen).
+  const [levelUpTargetId, setLevelUpTargetId] = useState<string | null>(null)
   const selectedScenario = useGameStore((s) => s.session?.scenario ?? null)
 
   // Copy a library (pack-imported) character into the roster as a user-owned
@@ -155,7 +159,10 @@ export function RosterPage() {
     )
   }
 
+  const levelUpTarget = roster.find((c) => c.id === levelUpTargetId)
+
   return (
+    <>
     <div className="min-h-screen bg-terminal-bg p-8 font-mono">
       <div className="max-w-3xl mx-auto">
         <button
@@ -254,6 +261,20 @@ export function RosterPage() {
                   >
                     ✕
                   </button>
+
+                  {/* Deferred level-up from a room-hosted session — flows below
+                      the card rather than overlaying it, so it doesn't cover
+                      the skills list. */}
+                  {c.pendingLevelUp && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setLevelUpTargetId(c.id) }}
+                      className="mt-1.5 w-full py-1 rounded border border-terminal-amber/50
+                        bg-terminal-amber/15 text-terminal-amber text-[10px] font-semibold tracking-widest
+                        uppercase text-center hover:bg-terminal-amber/25 transition-colors animate-pulse"
+                    >
+                      ★ Level Up Available
+                    </button>
+                  )}
                 </div>
               )
             })}
@@ -385,5 +406,22 @@ export function RosterPage() {
         )}
       </div>
     </div>
+
+    {levelUpTarget && levelUpTarget.pendingLevelUp && (
+      <LevelUpModal
+        key={levelUpTarget.id}
+        event={{
+          characterId: levelUpTarget.id,
+          oldLevel:    levelUpTarget.level,
+          newLevel:    levelUpTarget.pendingLevelUp.newLevel,
+        }}
+        character={levelUpTarget}
+        onConfirm={(choice) => {
+          levelUpCharacter(levelUpTarget.id, levelUpTarget.pendingLevelUp!.newLevel, choice)
+          setLevelUpTargetId(null)
+        }}
+      />
+    )}
+    </>
   )
 }

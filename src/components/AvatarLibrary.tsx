@@ -38,7 +38,7 @@ export function AvatarLibrary({ characterClass, current, onSelect, onClose }: Pr
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/95"
         onClick={(e) => e.target === e.currentTarget && onClose()}
       >
         <motion.div
@@ -101,7 +101,7 @@ export function AvatarLibrary({ characterClass, current, onSelect, onClose }: Pr
                       onClick={() => { onSelect(avatar.url); onClose() }}
                       onMouseEnter={() => setHovered(avatar.url)}
                       onMouseLeave={() => setHovered(null)}
-                      className={`relative rounded overflow-hidden aspect-square border-2 transition-all duration-150 ${
+                      className={`rounded overflow-hidden border-2 transition-all duration-150 ${
                         isSelected
                           ? 'border-terminal-green ring-2 ring-terminal-green/30'
                           : isHov
@@ -109,21 +109,25 @@ export function AvatarLibrary({ characterClass, current, onSelect, onClose }: Pr
                           : 'border-terminal-border hover:border-terminal-dim'
                       }`}
                     >
-                      <img
-                        src={avatar.url}
-                        alt={avatar.label}
-                        className="w-full h-full object-cover"
-                      />
-                      {/* Class badge for "All" tab */}
+                      <div className="relative aspect-square">
+                        <img
+                          src={avatar.url}
+                          alt={avatar.label}
+                          className="w-full h-full object-cover"
+                        />
+                        {isSelected && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-terminal-green/20">
+                            <span className="text-terminal-green text-lg font-bold">✓</span>
+                          </div>
+                        )}
+                      </div>
+                      {/* Class label for "All" tab — sits below the thumbnail
+                          (not overlaid on it) so the avatar image is never
+                          obscured; a solid background instead of a transparent
+                          strip made it hard to see and select on that tab. */}
                       {tab === 'all' && avatar.class && avatar.class !== characterClass && (
-                        <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[8px]
-                          text-terminal-dim text-center py-0.5 truncate px-1">
+                        <div className="bg-terminal-surface text-[8px] text-terminal-dim text-center py-0.5 truncate px-1">
                           {avatar.class}
-                        </div>
-                      )}
-                      {isSelected && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-terminal-green/20">
-                          <span className="text-terminal-green text-lg font-bold">✓</span>
                         </div>
                       )}
                     </button>

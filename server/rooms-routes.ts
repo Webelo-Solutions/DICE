@@ -4,9 +4,9 @@ import { repository } from './db/sqlite-repository'
 import type { RoomRow, ParticipantRow } from './db/repository'
 import { newToken, hashToken, newRoomCode, hashPassphrase, verifyPassphrase } from './auth/tokens'
 import { subscribe, unsubscribe, broadcast } from './realtime'
-import { makeDefaultCharacter, isCharacterClass } from '../src/data/classDefaults'
 import { setRoomProvider, getRoomProvider } from './ai-config'
 import { callDM } from '../src/engine/dmClient'
+import { levelForXp } from '../src/utils/leveling'
 import type { Room, Participant, RoomRole } from '../src/types/room'
 import type { Character, GameSession } from '../src/types/game'
 import type { ProviderConfig } from '../src/types/provider'
@@ -46,8 +46,14 @@ function authenticate(req: AuthedRequest, reply: FastifyReply): boolean {
 }
 
 export async function roomRoutes(app: FastifyInstance) {
+  // Every DICE page reachable in the browser (including /host, /join) already
+  // requires a signed-in account (App.tsx's RequireAuth), so anyone calling
+  // these room-membership endpoints is already a real DICE user — auth-gate
+  // them the same way the main data routes are (server/routes.ts).
+  const auth = { preHandler: app.requireAuth }
+
   // ── Create a room (become its facilitator) ──────────────
-  app.post<{ Body: { name?: string; passphrase?: string } }>('/rooms', async (req, reply) => {
+  app.post<{ Body: { name?: string; passphrase?: string } }>('/rooms', auth, async (req, reply) => {
     const name = ((req.body?.name ?? '').trim() || 'DICE Session').slice(0, 80)
     const passphrase = req.body?.passphrase ?? ''
     if (passphrase.length < 4) return reply.code(400).send({ error: 'A facilitator passphrase of at least 4 characters is required' })
@@ -63,7 +69,11 @@ export async function roomRoutes(app: FastifyInstance) {
 
     const token = newToken()
     const participantId = randomUUID()
-    repository.addParticipant({ id: participantId, roomId, role: 'facilitator', displayName: 'Facilitator', characterId: null, character: null, tokenHash: hashToken(token), lastSeenAt: now, createdAt: now })
+    repository.addParticipant({
+      id: participantId, roomId, role: 'facilitator', displayName: 'Facilitator',
+      characterId: null, character: null, ownerUserId: req.user!.id,
+      tokenHash: hashToken(token), lastSeenAt: now, createdAt: now,
+    })
 
     const room = repository.getRoomById(roomId)!
     const participant = repository.getParticipantByTokenHash(hashToken(token))!
@@ -71,22 +81,26 @@ export async function roomRoutes(app: FastifyInstance) {
   })
 
   // ── Join a room as a player ─────────────────────────────
-  app.post<{ Params: { code: string }; Body: { displayName?: string; class?: string } }>('/rooms/:code/join', async (req, reply) => {
+  // Players bring one of their own persisted roster characters — so XP/skills
+  // earned this session can be written back to it at /rooms/:code/end, rather
+  // than starting a throwaway character from scratch every time.
+  app.post<{ Params: { code: string }; Body: { characterId?: string } }>('/rooms/:code/join', auth, async (req, reply) => {
     const room = repository.getRoomByCode(req.params.code.toUpperCase())
     if (!room) return reply.code(404).send({ error: 'Room not found' })
     if (room.status === 'ended') return reply.code(409).send({ error: 'This room has ended' })
-    const displayName = (req.body?.displayName ?? '').trim().slice(0, 40)
-    if (!displayName) return reply.code(400).send({ error: 'A display name is required' })
-    const charClass = req.body?.class
-    if (!isCharacterClass(charClass)) return reply.code(400).send({ error: 'A valid character class is required' })
+    const characterId = req.body?.characterId
+    if (!characterId) return reply.code(400).send({ error: 'A character is required to join' })
+    const character = repository.listCharacters(req.user!.id).find((c) => c.id === characterId)
+    if (!character) return reply.code(404).send({ error: 'Character not found in your roster' })
 
-    // Each player IS their own character (Option B): build it from the chosen class.
     const now = Date.now()
     const token = newToken()
     const participantId = randomUUID()
-    const characterId = randomUUID()
-    const character = makeDefaultCharacter(characterId, displayName, charClass)
-    repository.addParticipant({ id: participantId, roomId: room.id, role: 'player', displayName, characterId, character, tokenHash: hashToken(token), lastSeenAt: now, createdAt: now })
+    repository.addParticipant({
+      id: participantId, roomId: room.id, role: 'player', displayName: character.name,
+      characterId: character.id, character, ownerUserId: req.user!.id,
+      tokenHash: hashToken(token), lastSeenAt: now, createdAt: now,
+    })
 
     const participant = repository.getParticipantByTokenHash(hashToken(token))!
     broadcastLobby(room.id)
@@ -94,7 +108,7 @@ export async function roomRoutes(app: FastifyInstance) {
   })
 
   // ── Claim/reclaim facilitator control with the passphrase ──
-  app.post<{ Params: { code: string }; Body: { passphrase?: string; displayName?: string } }>('/rooms/:code/claim-facilitator', async (req, reply) => {
+  app.post<{ Params: { code: string }; Body: { passphrase?: string; displayName?: string } }>('/rooms/:code/claim-facilitator', auth, async (req, reply) => {
     const room = repository.getRoomByCode(req.params.code.toUpperCase())
     if (!room) return reply.code(404).send({ error: 'Room not found' })
     if (!verifyPassphrase(req.body?.passphrase ?? '', room.facilitatorSecretHash)) {
@@ -103,7 +117,12 @@ export async function roomRoutes(app: FastifyInstance) {
     const now = Date.now()
     const token = newToken()
     const participantId = randomUUID()
-    repository.addParticipant({ id: participantId, roomId: room.id, role: 'facilitator', displayName: ((req.body?.displayName ?? 'Facilitator').trim() || 'Facilitator').slice(0, 40), characterId: null, character: null, tokenHash: hashToken(token), lastSeenAt: now, createdAt: now })
+    repository.addParticipant({
+      id: participantId, roomId: room.id, role: 'facilitator',
+      displayName: ((req.body?.displayName ?? 'Facilitator').trim() || 'Facilitator').slice(0, 40),
+      characterId: null, character: null, ownerUserId: req.user!.id,
+      tokenHash: hashToken(token), lastSeenAt: now, createdAt: now,
+    })
 
     const participant = repository.getParticipantByTokenHash(hashToken(token))!
     broadcastLobby(room.id)
@@ -144,16 +163,39 @@ export async function roomRoutes(app: FastifyInstance) {
     return reply.send({ ok: true })
   })
 
-  // ── Player claims (or releases) a roster character ─────
-  app.post<{ Params: { code: string }; Body: { characterId: string | null } }>('/rooms/:code/claim-character', async (req, reply) => {
-    if (!authenticate(req, reply)) return
-    const me = (req as AuthedRequest).participant!
-    const room = repository.getRoomByCode(req.params.code.toUpperCase())
-    if (!room || me.roomId !== room.id) return reply.code(403).send({ error: 'Not a member of this room' })
-    repository.setParticipantCharacter(me.id, req.body?.characterId ?? null)
-    broadcastLobby(room.id)
-    return reply.send({ ok: true })
-  })
+  // ── End the room session: write earned XP back to each player's own
+  //    persisted character (facilitator-only; the facilitator's own DICE
+  //    account has no write access to other players' characters, so this
+  //    runs server-side on their behalf using each participant's stored
+  //    ownerUserId). A level-up is queued (pendingLevelUp) rather than
+  //    auto-applied — the player picks their upgrade later from /roster. ──
+  app.post<{ Params: { code: string }; Body: { awards?: { characterId: string; xpAwarded: number }[] } }>(
+    '/rooms/:code/end',
+    async (req, reply) => {
+      if (!authenticate(req, reply)) return
+      const me = (req as AuthedRequest).participant!
+      const room = repository.getRoomByCode(req.params.code.toUpperCase())
+      if (!room || me.roomId !== room.id) return reply.code(403).send({ error: 'Not a member of this room' })
+      if (me.role !== 'facilitator') return reply.code(403).send({ error: 'Only the facilitator can end the session' })
+
+      const awards = req.body?.awards ?? []
+      const roomParticipants = repository.listParticipants(room.id)
+      for (const award of awards) {
+        const owner = roomParticipants.find((p) => p.characterId === award.characterId)?.ownerUserId
+        if (!owner) continue   // no persisted owner for this character — nothing to write back
+        const character = repository.listCharacters(owner).find((c) => c.id === award.characterId)
+        if (!character) continue
+        const newXp    = character.xp + award.xpAwarded
+        const newLevel = levelForXp(newXp)
+        repository.upsertCharacter({
+          ...character,
+          xp: newXp,
+          pendingLevelUp: newLevel > character.level ? { newLevel } : character.pendingLevelUp,
+        }, owner)
+      }
+      return reply.send({ ok: true })
+    },
+  )
 
   // ── Player submits an action — allowed only on their turn ──
   // The server validates the turn against the live session, then relays the

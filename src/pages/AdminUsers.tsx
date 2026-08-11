@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiAdmin, type AdminUserRow } from '../api/admin'
 import { useUserStore } from '../store/userStore'
+import { useToastStore } from '../store/toastStore'
+import { EmptyState } from '../components/EmptyState'
 
 // /admin/users — gated by RequireAdmin in App.tsx. Lets the admin list, create,
 // edit, reset-password, and force-sign-out other users. Self-protect guards on
@@ -12,7 +14,7 @@ export function AdminUsers() {
   const self = useUserStore((s) => s.user)
   const [users, setUsers]     = useState<AdminUserRow[]>([])
   const [loading, setLoading] = useState(true)
-  const [msg, setMsg]         = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
+  const pushToast = useToastStore((s) => s.push)
 
   // Modals
   const [createOpen, setCreateOpen] = useState(false)
@@ -21,7 +23,7 @@ export function AdminUsers() {
   const load = async () => {
     setLoading(true)
     try { setUsers(await apiAdmin.listUsers()) }
-    catch (e) { setMsg({ kind: 'error', text: (e as Error).message }) }
+    catch (e) { pushToast((e as Error).message, 'error') }
     finally { setLoading(false) }
   }
   useEffect(() => { load() }, [])
@@ -30,10 +32,9 @@ export function AdminUsers() {
   const [registrationCode, setRegistrationCode] = useState<string | null | undefined>(undefined)
   useEffect(() => { apiAdmin.getRegistrationCode().then((r) => setRegistrationCode(r.code)).catch(() => setRegistrationCode(null)) }, [])
 
-  const flash = (kind: 'success' | 'error', text: string) => {
-    setMsg({ kind, text })
-    setTimeout(() => setMsg((m) => (m?.text === text ? null : m)), 4000)
-  }
+  // Transient action-result notifications (create/reset/enable/disable, etc.)
+  // go through the shared toast stack rather than a page-local banner.
+  const flash = (kind: 'success' | 'error', text: string) => pushToast(text, kind)
 
   const toggleActive = async (u: AdminUserRow) => {
     try {
@@ -84,6 +85,22 @@ export function AdminUsers() {
               📊 Program Analytics
             </button>
             <button
+              onClick={() => navigate('/admin/scenarios')}
+              className="px-3 py-1.5 text-xs font-semibold tracking-widest uppercase
+                border border-terminal-blue/40 text-terminal-blue
+                hover:bg-terminal-blue/10 hover:border-terminal-blue rounded transition-all"
+            >
+              🗺️ Scenarios
+            </button>
+            <button
+              onClick={() => navigate('/admin/injects-catalog')}
+              className="px-3 py-1.5 text-xs font-semibold tracking-widest uppercase
+                border border-terminal-blue/40 text-terminal-blue
+                hover:bg-terminal-blue/10 hover:border-terminal-blue rounded transition-all"
+            >
+              ⚡ Injects Catalog
+            </button>
+            <button
               onClick={() => setCreateOpen(true)}
               className="px-3 py-1.5 text-xs font-semibold tracking-widest uppercase
                 bg-terminal-green/10 border border-terminal-green/40 text-terminal-green
@@ -93,14 +110,6 @@ export function AdminUsers() {
             </button>
           </div>
         </div>
-
-        {msg && (
-          <div className={`rounded border p-3 text-[11px] ${msg.kind === 'success'
-            ? 'border-terminal-green/40 bg-terminal-green/10 text-terminal-green'
-            : 'border-terminal-red/40 bg-terminal-red/10 text-terminal-red'}`}>
-            {msg.text}
-          </div>
-        )}
 
         {registrationCode !== undefined && (
           <RegistrationCodeCard
@@ -118,7 +127,7 @@ export function AdminUsers() {
           <div className="divide-y divide-terminal-border">
             {loading && <div className="px-4 py-3 text-xs text-terminal-dim italic">Loading…</div>}
             {!loading && users.length === 0 && (
-              <div className="px-4 py-3 text-xs text-terminal-dim italic">No users (impossible from this view).</div>
+              <EmptyState message="No users (impossible from this view)." />
             )}
             {users.map((u) => {
               const isSelf = self?.id === u.id
@@ -264,8 +273,9 @@ function CreateUserModal({ onClose, onCreated, onError }:
   const [role,        setRole]        = useState('player')
   const [busy,        setBusy]        = useState(false)
 
+  const usernameValid = /^[a-z0-9][a-z0-9._-]{1,31}$/i.test(username)
   const valid =
-    /^[a-z0-9][a-z0-9._-]{1,31}$/i.test(username) &&
+    usernameValid &&
     displayName.trim().length >= 1 &&
     password.length >= 8
 
@@ -289,6 +299,11 @@ function CreateUserModal({ onClose, onCreated, onError }:
     <ModalShell title="Create User" onClose={onClose}>
       <form onSubmit={submit} className="space-y-3">
         <ModalInput label="Username" value={username} onChange={setUsername} placeholder="e.g. bob" hint="2–32 chars, alphanumerics + ._-" autoFocus />
+        {username.length > 0 && !usernameValid && (
+          <div className="text-[10px] text-terminal-amber -mt-2">
+            Must start with a letter/number and use only letters, numbers, ._-
+          </div>
+        )}
         <ModalInput label="Display Name" value={displayName} onChange={setDisplayName} placeholder="e.g. Bob Smith" />
         <ModalInput label="Initial Password" type="password" value={password} onChange={setPassword} hint="≥ 8 characters; share with the user out-of-band" />
         <label className="block">

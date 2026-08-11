@@ -152,6 +152,10 @@ export const RANSOMWARE_01: ScenarioPack = {
       mechanicalEffect: '+2 to all Stealth-based rolls for 2 rounds.',
     },
   ],
+  // References into the global injects catalog (server/db/seed-injects-catalog.ts
+  // seeds these 4 entries on first boot) rather than embedding them inline.
+  criticalHitInjectIds:  ['CH_OUTSIDE_CONSULTANT', 'CH_CISO_CONFIDENCE'],
+  criticalFailInjectIds: ['CF_ATTACKER_ADAPTS', 'CF_REPORTER_CALLS'],
 }
 
 export const INSIDER_01: ScenarioPack = {

@@ -94,6 +94,10 @@ export async function apiRoutes(app: FastifyInstance) {
     return { deleted: req.params.id }
   })
 
+  // ── Injects catalog — install-wide, auth-required ───────
+  // Read-only here; management is admin-gated (see server/auth/admin-routes.ts).
+  app.get('/injects-catalog', auth, async () => repository.listInjectsCatalog())
+
   // ── Content packs — install-wide, auth-required ─────────
   app.get('/content-packs', auth, async () => repository.listContentPacks().map(packSummary))
   app.post('/content-packs/import', { ...auth, bodyLimit: PACK_IMPORT_BODY_LIMIT }, async (req, reply) => {

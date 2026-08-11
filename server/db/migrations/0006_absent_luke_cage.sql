@@ -1,0 +1,1 @@
+ALTER TABLE `participants` ADD `owner_user_id` text;
