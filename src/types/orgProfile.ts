@@ -56,10 +56,10 @@ export const INITIAL_ORG_PROFILE: OrgProfile = {
 // freeform "Other..." escape hatch. The OrgProfile field itself stays
 // `string` so custom or in-house tools fit without schema changes.
 export const ORG_PROFILE_CHOICES: Record<keyof Omit<OrgProfile, 'notes'>, readonly string[]> = {
-  siem:          ['Microsoft Sentinel', 'Splunk', 'Elastic Security', 'IBM QRadar', 'Google Chronicle', 'Sumo Logic', 'Exabeam'],
+  siem:          ['Microsoft Sentinel', 'Splunk', 'CrowdStrike Falcon Next-Gen SIEM', 'Elastic Security', 'IBM QRadar', 'Google Chronicle', 'Sumo Logic', 'Exabeam'],
   edr:           ['Microsoft Defender for Endpoint', 'CrowdStrike Falcon', 'SentinelOne', 'VMware Carbon Black', 'Palo Alto Cortex XDR'],
-  soar:          ['None', 'Tines', 'Palo Alto XSOAR', 'Splunk SOAR', 'Microsoft Sentinel Playbooks', 'Swimlane'],
-  threatIntel:   ['None', 'Recorded Future', 'Mandiant Advantage', 'CrowdStrike Falcon Intel', 'Anomali', 'MISP (open source)'],
+  soar:          ['None', 'Tines', 'Torq', 'Palo Alto XSOAR', 'Splunk SOAR', 'Microsoft Sentinel Playbooks', 'Swimlane'],
+  threatIntel:   ['None', 'Recorded Future', 'Mandiant Advantage', 'CrowdStrike Falcon Intel', 'Intel 471', 'Industry ISAC', 'Anomali', 'MISP (open source)'],
   identity:      ['Entra ID + Active Directory', 'Active Directory (on-prem)', 'Okta', 'Ping Identity', 'Google Workspace', 'JumpCloud'],
   mfa:           ['Microsoft Authenticator', 'Duo', 'Okta Verify', 'YubiKey (FIDO2)', 'RSA SecurID', 'SMS / Voice (legacy)'],
   network:       ['Palo Alto NGFW', 'Fortinet FortiGate', 'Cisco Firepower', 'Check Point', 'Zscaler', 'Cloudflare'],
@@ -68,7 +68,7 @@ export const ORG_PROFILE_CHOICES: Record<keyof Omit<OrgProfile, 'notes'>, readon
   vulnMgmt:      ['None', 'Tenable', 'Qualys', 'Rapid7 InsightVM', 'Wiz', 'Microsoft Defender Vuln Mgmt'],
   cloudProvider: ['Azure-primary', 'AWS-primary', 'GCP-primary', 'Multi-cloud', 'Hybrid (Azure + on-prem)', 'Hybrid (AWS + on-prem)', 'On-prem only'],
   forensics:     ['Velociraptor', 'KAPE', 'Microsoft Defender Live Response', 'CrowdStrike Real Time Response', 'Magnet AXIOM', 'GRR Rapid Response'],
-  ticketing:     ['ServiceNow', 'Jira Service Management', 'PagerDuty', 'Opsgenie', 'Zendesk', 'Linear'],
+  ticketing:     ['ServiceNow', 'Jira Service Management', 'TheHive', 'Torq', 'PagerDuty', 'Opsgenie', 'Zendesk', 'Linear'],
 } as const
 
 // True when at least one category has been filled in. Useful for deciding
