@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { useGameStore } from '../store/gameStore'
+import { computeXpAwards } from '../utils/xp'
 import { useRoomStore } from '../store/roomStore'
 import { roomApi } from '../api/rooms'
 import { NarrativeFeed } from '../components/NarrativeFeed'
@@ -133,16 +134,10 @@ export function GameSession() {
       const critHits      = feed.filter((e) => e.outcome === 'critical_hit').length
       const critFails     = feed.filter((e) => e.outcome === 'critical_fail').length
 
-      // Compute XP from actual roll outcomes — matches what LiveXPScorecard showed
-      const OUTCOME_XP: Record<string, number> = {
-        critical_hit: 25, success: 15, partial: 8, failure: 3, critical_fail: 1,
-      }
-      const xpAwarded = feed
-        .filter((e) => e.type === 'roll_result' && e.outcome)
-        .reduce((sum, e) => sum + (OUTCOME_XP[e.outcome!] ?? 0), 0)
-
       const outcome = session.status === 'victory' ? 'victory' : session.status === 'timeout' ? 'partial' : 'defeat'
-      const finalXpAwarded = Math.max(xpAwarded, outcome === 'victory' ? 50 : 20)
+      // Individual XP per player, computed from their own rolls throughout the
+      // session — matches what LiveXPScorecard showed live, not an even split.
+      const { perPlayer: xpByPlayer, total: finalXpAwarded } = computeXpAwards(session.players, feed, outcome)
 
       // Room mode: the facilitator's own roster doesn't contain the players'
       // characters (each belongs to its own owner's account), so endSession's
@@ -151,16 +146,16 @@ export function GameSession() {
       const membership = useRoomStore.getState().membership
       if (membership?.role === 'facilitator' && !hasEndedRoomRef.current) {
         hasEndedRoomRef.current = true
-        const xpEach = Math.round(finalXpAwarded / Math.max(1, session.players.length))
         roomApi.endRoom(
           membership.code, membership.token,
-          session.players.map((p) => ({ characterId: p.id, xpAwarded: xpEach })),
+          session.players.map((p) => ({ characterId: p.id, xpAwarded: xpByPlayer[p.id] ?? 0 })),
         ).catch((e) => console.error('[room] failed to write back player XP', e))
       }
 
       endSession({
         outcome,
         xpAwarded:          finalXpAwarded,
+        xpByPlayer,
         criticalHits:       critHits,
         criticalFails:      critFails,
         injectsSurvived:    feed.filter((e) => e.type === 'inject').length,
@@ -1127,7 +1122,7 @@ export function GameSession() {
                     Threat actor is choosing tactics...
                   </div>
                 </div>
-              ) : adversarySelectedAction && !adversaryWaitingForRoll ? (
+              ) : adversaryLastRoll && adversarySelectedAction && !adversaryWaitingForRoll ? (
                 /* Post-roll / narration streaming view */
                 <div className="max-w-2xl mx-auto">
                   <div className={`rounded-lg border ${adversaryClassDef.borderColor} ${adversaryClassDef.bgColor} p-5 mb-4`}>

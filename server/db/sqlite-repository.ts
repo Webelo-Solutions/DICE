@@ -59,9 +59,10 @@ export class SqliteRepository implements DiceRepository {
       set: { name: c.name, class: c.class, level: c.level, xp: c.xp, data: c, updatedAt: now },
     }).run()
   }
-  deleteCharacter(id: string, userId: string): void {
+  deleteCharacter(id: string, userId: string): boolean {
     // Scope by owner so users can only delete their own rows.
-    this.db.delete(characters).where(and(eq(characters.id, id), eq(characters.ownerUserId, userId))).run()
+    const result = this.db.delete(characters).where(and(eq(characters.id, id), eq(characters.ownerUserId, userId))).run()
+    return result.changes > 0
   }
 
   // ── Campaigns ───────────────────────────────────────────
@@ -77,8 +78,9 @@ export class SqliteRepository implements DiceRepository {
       set: { name: c.name, status: c.status, data: c, updatedAt: now },
     }).run()
   }
-  deleteCampaign(id: string, userId: string): void {
-    this.db.delete(campaigns).where(and(eq(campaigns.id, id), eq(campaigns.ownerUserId, userId))).run()
+  deleteCampaign(id: string, userId: string): boolean {
+    const result = this.db.delete(campaigns).where(and(eq(campaigns.id, id), eq(campaigns.ownerUserId, userId))).run()
+    return result.changes > 0
   }
 
   // ── Custom scenarios ────────────────────────────────────
@@ -102,11 +104,12 @@ export class SqliteRepository implements DiceRepository {
       set: { title: s.title, difficulty: s.difficulty, data: s, updatedAt: now },
     }).run()
   }
-  deleteCustomScenario(id: string, userId: string): void {
+  deleteCustomScenario(id: string, userId: string): boolean {
     // Pack-imported scenarios (NULL owner) are NOT deletable via this route;
     // they're removed via the content-pack uninstall flow.
-    this.db.delete(customScenarios)
+    const result = this.db.delete(customScenarios)
       .where(and(eq(customScenarios.id, id), eq(customScenarios.ownerUserId, userId))).run()
+    return result.changes > 0
   }
 
   // Admin: unscoped access to every custom scenario, for the admin scenario editor.
@@ -234,8 +237,9 @@ export class SqliteRepository implements DiceRepository {
       set: { name: s.name, campaignId: s.campaignId ?? null, savedAt: s.savedAt, data: s },
     }).run()
   }
-  deleteSave(id: string, userId: string): void {
-    this.db.delete(saves).where(and(eq(saves.id, id), eq(saves.ownerUserId, userId))).run()
+  deleteSave(id: string, userId: string): boolean {
+    const result = this.db.delete(saves).where(and(eq(saves.id, id), eq(saves.ownerUserId, userId))).run()
+    return result.changes > 0
   }
 
   // ── Session history ─────────────────────────────────────

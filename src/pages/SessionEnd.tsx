@@ -27,8 +27,7 @@ export function SessionEnd() {
     xpApplied.current = true
 
     const participants = session.players
-    const xpEach = Math.round(result.xpAwarded / Math.max(1, participants.length))
-    const events  = detectLevelUps(participants, xpEach)
+    const events  = detectLevelUps(participants, result.xpByPlayer)
 
     // Build and persist the session record for analytics
     const { feed, recordSession, applySessionToOrg } = useGameStore.getState()
@@ -65,7 +64,6 @@ export function SessionEnd() {
   const color        = isVictory ? 'text-terminal-green'    : 'text-terminal-red'
   const borderColor  = isVictory ? 'border-terminal-green/30' : 'border-terminal-red/30'
   const bgColor      = isVictory ? 'bg-terminal-green/5'    : 'bg-terminal-red/5'
-  const xpEach       = Math.round(result.xpAwarded / Math.max(1, session.players.length))
 
   const handleLevelUpChoice = (choice: LevelUpChoice) => {
     const event = levelUpQueue[queueIndex]
@@ -133,7 +131,7 @@ export function SessionEnd() {
                         </span>
                       )}
                       <span className="text-terminal-dim text-xs">LVL {currentLvl}</span>
-                      <span className="text-terminal-green font-bold">+{xpEach} XP</span>
+                      <span className="text-terminal-green font-bold">+{result.xpByPlayer[p.id] ?? 0} XP</span>
                     </div>
                   </div>
                 )

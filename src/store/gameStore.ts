@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 import type { Character, GameSession, FeedEntry, ScenarioPack, SessionResult, TimerDifficulty } from '../types/game'
 import type { DMResponse } from '../types/dm'
 import { applyLevelUp } from '../utils/leveling'
+import { computeXpAwards } from '../utils/xp'
 import type { LevelUpChoice } from '../utils/leveling'
 import type { CommConfig } from '../engine/webhookClient'
 import type { SessionRecord } from '../types/history'
@@ -472,12 +473,11 @@ export const useGameStore = create<GameStore>()(
       endSession: (result) =>
         set((s) => {
           if (!s.session) return { result }
-          const xpEach   = Math.round(result.xpAwarded / Math.max(1, s.session.players.length))
           const playerIds = new Set(s.session.players.map((p) => p.id))
           return {
             result,
             roster: s.roster.map((c) =>
-              playerIds.has(c.id) ? { ...c, xp: c.xp + xpEach } : c
+              playerIds.has(c.id) ? { ...c, xp: c.xp + (result.xpByPlayer[c.id] ?? 0) } : c
             ),
             // session.status is already terminal ('victory' | 'defeat' | 'timeout')
             // by the time endSession runs — it's what triggered the call. Don't
@@ -537,14 +537,13 @@ export const useGameStore = create<GameStore>()(
         const timerExpiries = feed.filter((e) => e.type === 'system' && e.speaker === 'TIMER').length
         const critHits      = feed.filter((e) => e.outcome === 'critical_hit').length
         const critFails     = feed.filter((e) => e.outcome === 'critical_fail').length
-        const rollCount     = feed.filter((e) => e.type === 'roll_result').length
-        const xpAwarded     = Math.min(200, rollCount * 8 + critHits * 15)
-        const xpEach        = Math.round(xpAwarded / Math.max(1, session.players.length))
+        const { perPlayer: xpByPlayer, total: xpAwarded } = computeXpAwards(session.players, feed, 'partial')
         const playerIds     = new Set(session.players.map((p) => p.id))
         set({
           result: {
             outcome:            'partial',
             xpAwarded,
+            xpByPlayer,
             criticalHits:       critHits,
             criticalFails:      critFails,
             injectsSurvived:    feed.filter((e) => e.type === 'inject').length,
@@ -563,7 +562,7 @@ export const useGameStore = create<GameStore>()(
             adversaryRoundsActive: session.adversary?.rollHistory.length,
           },
           roster: roster.map((c) =>
-            playerIds.has(c.id) ? { ...c, xp: c.xp + xpEach } : c
+            playerIds.has(c.id) ? { ...c, xp: c.xp + (xpByPlayer[c.id] ?? 0) } : c
           ),
         })
       },

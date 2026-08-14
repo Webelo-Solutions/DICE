@@ -32,12 +32,17 @@ export interface DiceRepository {
   listCharacters(userId: string): Character[]   // user-authored/cloned (pack_id NULL)
   listLibraryCharacters(): Character[]          // imported from content packs (pack_id set)
   upsertCharacter(character: Character, userId: string): void
-  deleteCharacter(id: string, userId: string): void
+  // Returns true iff a row was actually deleted — false means either the id
+  // doesn't exist or (more likely) it exists but isn't owned by this user.
+  // Callers must surface false as a failure rather than treating the call as
+  // having succeeded; silently swallowing it makes a permanently-failing
+  // delete look identical to a working one.
+  deleteCharacter(id: string, userId: string): boolean
 
   // ── Campaigns ───────────────────────────────────────────
   listCampaigns(userId: string): Campaign[]
   upsertCampaign(campaign: Campaign, userId: string): void
-  deleteCampaign(id: string, userId: string): void
+  deleteCampaign(id: string, userId: string): boolean
 
   // ── Custom scenarios ────────────────────────────────────
   // Returns: the user's own custom scenarios + ALL pack-imported scenarios
@@ -45,7 +50,7 @@ export interface DiceRepository {
   // scenarios (is_global = true).
   listCustomScenarios(userId: string): CustomScenario[]
   upsertCustomScenario(scenario: CustomScenario, userId: string): void
-  deleteCustomScenario(id: string, userId: string): void
+  deleteCustomScenario(id: string, userId: string): boolean
 
   // Admin/reporting: cross-user, unscoped access to every custom scenario
   // (used by the admin scenario editor). adminUpsertCustomScenario always
@@ -72,7 +77,7 @@ export interface DiceRepository {
   // ── Save slots ──────────────────────────────────────────
   listSaves(userId: string): SaveSlot[]
   addSave(slot: SaveSlot, userId: string): void
-  deleteSave(id: string, userId: string): void
+  deleteSave(id: string, userId: string): boolean
 
   // ── Session history ─────────────────────────────────────
   listSessionHistory(userId: string): SessionRecord[]

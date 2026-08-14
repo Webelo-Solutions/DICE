@@ -423,7 +423,7 @@ export function Landing() {
       {/* Bottom classification bar */}
       <div className="mt-auto w-full bg-terminal-surface border-t border-terminal-border py-1.5 text-center flex-shrink-0">
         <span className="text-[9px] text-terminal-dim/60 tracking-widest uppercase">
-          DICE v0.1 · For authorized training exercises only · Not for operational use
+          DICE v{__APP_VERSION__} · For authorized training exercises only · Not for operational use
         </span>
       </div>
     </div>

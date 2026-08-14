@@ -2,15 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import type { Character, FeedEntry, OutcomeTier } from '../types/game'
 import { levelForXp, LEVEL_THRESHOLDS } from '../utils/leveling'
-
-// XP awarded per roll outcome (live, pre-session-end)
-const OUTCOME_XP: Record<OutcomeTier, number> = {
-  critical_hit:  25,
-  success:       15,
-  partial:       8,
-  failure:       3,
-  critical_fail: 1,
-}
+import { OUTCOME_XP } from '../utils/xp'
 
 const OUTCOME_COLOR: Record<OutcomeTier, string> = {
   critical_hit:  'text-terminal-green',

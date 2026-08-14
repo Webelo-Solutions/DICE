@@ -104,7 +104,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           <button
             onClick={toggleCollapsed}
             title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="ml-auto text-terminal-dim/50 hover:text-terminal-green text-xs flex-shrink-0"
+            className="ml-auto flex-shrink-0 w-6 h-6 flex items-center justify-center rounded border
+              border-terminal-border text-terminal-dim/70 text-xs
+              hover:border-terminal-green/60 hover:text-terminal-green hover:bg-terminal-green/5 transition-colors"
           >
             {collapsed ? '»' : '«'}
           </button>

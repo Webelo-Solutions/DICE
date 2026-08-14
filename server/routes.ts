@@ -65,8 +65,9 @@ export async function apiRoutes(app: FastifyInstance) {
     repository.upsertCharacter(req.body, uid(req))
     return req.body
   })
-  app.delete<{ Params: IdParam }>('/characters/:id', auth, async (req) => {
-    repository.deleteCharacter(req.params.id, uid(req))
+  app.delete<{ Params: IdParam }>('/characters/:id', auth, async (req, reply) => {
+    const deleted = repository.deleteCharacter(req.params.id, uid(req))
+    if (!deleted) return reply.code(404).send({ error: 'Character not found' })
     return { deleted: req.params.id }
   })
 
@@ -77,8 +78,9 @@ export async function apiRoutes(app: FastifyInstance) {
     repository.upsertCampaign(req.body, uid(req))
     return req.body
   })
-  app.delete<{ Params: IdParam }>('/campaigns/:id', auth, async (req) => {
-    repository.deleteCampaign(req.params.id, uid(req))
+  app.delete<{ Params: IdParam }>('/campaigns/:id', auth, async (req, reply) => {
+    const deleted = repository.deleteCampaign(req.params.id, uid(req))
+    if (!deleted) return reply.code(404).send({ error: 'Campaign not found' })
     return { deleted: req.params.id }
   })
 
@@ -89,8 +91,9 @@ export async function apiRoutes(app: FastifyInstance) {
     repository.upsertCustomScenario(req.body, uid(req))
     return req.body
   })
-  app.delete<{ Params: IdParam }>('/custom-scenarios/:id', auth, async (req) => {
-    repository.deleteCustomScenario(req.params.id, uid(req))
+  app.delete<{ Params: IdParam }>('/custom-scenarios/:id', auth, async (req, reply) => {
+    const deleted = repository.deleteCustomScenario(req.params.id, uid(req))
+    if (!deleted) return reply.code(404).send({ error: 'Scenario not found' })
     return { deleted: req.params.id }
   })
 
@@ -127,8 +130,9 @@ export async function apiRoutes(app: FastifyInstance) {
     repository.addSave(req.body, uid(req))
     return req.body
   })
-  app.delete<{ Params: IdParam }>('/saves/:id', auth, async (req) => {
-    repository.deleteSave(req.params.id, uid(req))
+  app.delete<{ Params: IdParam }>('/saves/:id', auth, async (req, reply) => {
+    const deleted = repository.deleteSave(req.params.id, uid(req))
+    if (!deleted) return reply.code(404).send({ error: 'Save not found' })
     return { deleted: req.params.id }
   })
 

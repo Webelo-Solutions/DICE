@@ -272,6 +272,9 @@ export interface FeedEntry {
 export interface SessionResult {
   outcome:             'victory' | 'partial' | 'defeat'
   xpAwarded:           number
+  // Actual XP each player earned from their own rolls this session, keyed by
+  // character id — xpAwarded above is just the sum, shown as a team stat.
+  xpByPlayer:          Record<string, number>
   criticalHits:        number
   criticalFails:       number
   injectsSurvived:     number

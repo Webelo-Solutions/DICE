@@ -113,12 +113,12 @@ export interface LevelUpEvent {
 
 export function detectLevelUps(
   characters: Character[],
-  xpAwarded: number,
+  xpByCharacter: Record<string, number>,
 ): LevelUpEvent[] {
   return characters
     .map((c) => {
       const oldLevel = c.level
-      const newLevel = levelForXp(c.xp + xpAwarded)
+      const newLevel = levelForXp(c.xp + (xpByCharacter[c.id] ?? 0))
       return newLevel > oldLevel ? { characterId: c.id, oldLevel, newLevel } : null
     })
     .filter((e): e is LevelUpEvent => e !== null)
