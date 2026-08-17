@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGameStore } from '../store/gameStore'
-import { useRoomStore } from '../store/roomStore'
+import { useRoomStore, roomMode } from '../store/roomStore'
 import { roomApi } from '../api/rooms'
+import { buildDepartmentalLineup } from '../utils/departmentalSession'
 import { CharacterCard } from '../components/CharacterCard'
 import { Tooltip } from '../components/Tooltip'
 import { LevelUpModal } from '../components/LevelUpModal'
@@ -93,9 +94,15 @@ export function RosterPage() {
   const membership = useRoomStore((s) => s.membership)
   const roomParticipants = useRoomStore((s) => s.participants)
   const isRoomFacilitator = membership?.role === 'facilitator'
-  const roomPlayers = roomParticipants
-    .filter((p) => p.role === 'player' && p.character)
-    .map((p) => p.character!)
+  const isDepartmental = roomMode(membership) === 'departmental'
+  // Departmental sessions seat everyone who picked a role — including people
+  // who brought no character (they get the role baseline) and department leads,
+  // who are players with extra lobby powers. Testing for role === 'player' and
+  // a present character, as standard mode does, would silently bench both.
+  const lineup = isDepartmental ? buildDepartmentalLineup(roomParticipants) : null
+  const roomPlayers = isDepartmental
+    ? lineup!.players
+    : roomParticipants.filter((p) => p.role === 'player' && p.character).map((p) => p.character!)
 
   if (isRoomFacilitator) {
     const launchRoom = () => {
@@ -103,7 +110,11 @@ export function RosterPage() {
       // Hand the AI key to the server (held in memory) so the DM runs server-side.
       const cfg = useGameStore.getState().providerConfig
       if (cfg) roomApi.setDmProvider(membership.code, membership.token, cfg).catch((e) => console.error('[dm-provider]', e))
-      initSession(selectedScenario, roomPlayers, roomPlayers.length > 1 ? 'team' : 'solo', difficulty)
+      if (isDepartmental) {
+        initSession(selectedScenario, roomPlayers, 'departmental', difficulty, undefined, undefined, lineup!.seats)
+      } else {
+        initSession(selectedScenario, roomPlayers, roomPlayers.length > 1 ? 'team' : 'solo', difficulty)
+      }
       navigate('/game')
     }
     return (

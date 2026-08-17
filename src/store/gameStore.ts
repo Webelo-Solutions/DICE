@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Character, GameSession, FeedEntry, ScenarioPack, SessionResult, TimerDifficulty, TraitName } from '../types/game'
+import type { Character, GameSession, FeedEntry, ScenarioPack, SessionResult, TimerDifficulty, TraitName, DepartmentalSeat } from '../types/game'
+import { orderRolesByInitiative, buildRotation, advanceRole, drawActor } from '../engine/rotation'
 import type { DMResponse } from '../types/dm'
 import { applyLevelUp } from '../utils/leveling'
 import { computeXpAwards } from '../utils/xp'
@@ -34,7 +35,9 @@ interface GameStore {
   isDMThinking: boolean
   result:       SessionResult | null
 
-  initSession:  (scenario: ScenarioPack, players: Character[], mode: 'solo' | 'team' | 'adversary', timerDifficulty: TimerDifficulty, adversaryPlayerId?: string, adversaryClass?: AdversaryClass) => void
+  // `seats` is departmental mode only: it maps each participant to the character
+  // that resolves their rolls, and drives the role initiative and rotation.
+  initSession:  (scenario: ScenarioPack, players: Character[], mode: GameSession['mode'], timerDifficulty: TimerDifficulty, adversaryPlayerId?: string, adversaryClass?: AdversaryClass, seats?: DepartmentalSeat[]) => void
 
   pendingAction:  string
   setAction:      (action: string) => void
@@ -44,7 +47,16 @@ interface GameStore {
   applyAdversaryRoll: (evaded: boolean, stageAdvanced: string | null, stealthDelta: number, complicationsAdded: string[]) => void
 
   markRoundTimerExpired: () => void
-  advanceTurn:      () => void
+  // `eligibleParticipantIds` is departmental mode only — the set of participants
+  // with an open socket right now. The store has no view of connectivity (that
+  // lives in roomStore), so the caller supplies it; passing nothing means
+  // "connectivity unknown" and everyone is treated as available.
+  advanceTurn:      (eligibleParticipantIds?: string[]) => void
+  // Departmental mode: hand the CURRENT role's turn to the next person in its
+  // pool without advancing the role or the round. Used when the drawn actor
+  // lets the turn timer run out or drops off (decision D14) — the role still
+  // gets its action rather than losing it.
+  reassignActor:    (eligibleParticipantIds?: string[]) => void
   // Records that a player has spent a once-per-session trait (Composure,
   // Rally, Second Wind) this session, so it can't be used again.
   markTraitUsed:    (playerId: string, trait: TraitName) => void
@@ -149,7 +161,7 @@ export const useGameStore = create<GameStore>()(
         })),
       clearHistory: () => set({ sessionHistory: [] }),
 
-      initSession: (scenario, players, mode, timerDifficulty, adversaryPlayerId, adversaryClass) => {
+      initSession: (scenario, players, mode, timerDifficulty, adversaryPlayerId, adversaryClass, seats) => {
         // In adversary mode, exclude the adversary from the defender initiative order
         const defenders = mode === 'adversary' && adversaryPlayerId
           ? players.filter((p) => p.id !== adversaryPlayerId)
@@ -164,6 +176,16 @@ export const useGameStore = create<GameStore>()(
             return rollB - rollA
           })
           .map((p) => p.id)
+
+        // ── Departmental: the six roles are the initiative order, not the
+        //    people. The opening actor is drawn here so the session starts on a
+        //    real seat rather than an empty turn. Connectivity is unknown at
+        //    this instant (players are mid-navigation), so everyone is eligible.
+        const isDepartmental = mode === 'departmental' && !!seats?.length
+        const roleInitiative = isDepartmental ? orderRolesByInitiative(seats!, players) : undefined
+        const opening = isDepartmental
+          ? advanceRole(roleInitiative!, null, buildRotation(seats!), seats!, null)
+          : null
 
         const adversary: AdversaryState | undefined =
           mode === 'adversary' && adversaryPlayerId && adversaryClass
@@ -194,7 +216,10 @@ export const useGameStore = create<GameStore>()(
           players,
           mode,
           initiativeOrder,
-          currentTurnPlayerId:    initiativeOrder[0],
+          // Departmental sessions still expose the acting CHARACTER here, so
+          // the DM prompt, dice, trait and XP paths stay entirely unaware of
+          // the rotation sitting above them.
+          currentTurnPlayerId:    isDepartmental ? (opening?.actor?.characterId ?? '') : initiativeOrder[0],
           act:                    1,
           round:                  1,
           scenarioClockRemaining: scenario.scenarioClockStart,
@@ -215,6 +240,12 @@ export const useGameStore = create<GameStore>()(
           adversary,
           npcs,
           usedOnceTraits: {},
+          ...(isDepartmental ? {
+            seats,
+            roleInitiative,
+            rotation:     opening?.rotation ?? buildRotation(seats!),
+            currentActor: opening?.actor ?? null,
+          } : {}),
         }
         set({ session, feed: [], result: null, isDMThinking: true })
       },
@@ -490,9 +521,40 @@ export const useGameStore = create<GameStore>()(
 
       // Advance to the next player — does NOT set isDMThinking.
       // The DM only speaks in response to a player action, not on turn advance.
-      advanceTurn: () =>
+      advanceTurn: (eligibleParticipantIds) =>
         set((s) => {
           if (!s.session) return {}
+
+          // ── Departmental: step to the next staffed ROLE and draw whoever
+          //    acts for it. The round ends when the order wraps — which is
+          //    once every six turns at most, regardless of headcount.
+          if (s.session.mode === 'departmental' && s.session.roleInitiative && s.session.seats) {
+            const connected = eligibleParticipantIds ? new Set(eligibleParticipantIds) : null
+            const { actor, rotation, wrapped } = advanceRole(
+              s.session.roleInitiative,
+              s.session.currentActor?.role ?? null,
+              s.session.rotation ?? {},
+              s.session.seats,
+              connected,
+            )
+            // Nobody anywhere is reachable — hold the turn where it is rather
+            // than blanking the actor, so the session resumes cleanly when
+            // someone reconnects.
+            if (!actor) return {}
+            const newRound = wrapped ? s.session.round + 1 : s.session.round
+            return {
+              session: {
+                ...s.session,
+                currentActor:        actor,
+                currentTurnPlayerId: actor.characterId,
+                rotation,
+                round:               newRound,
+                roundTimerExpired:   false,
+                activeEffects:       s.session.activeEffects.filter((e) => e.expiresRound >= newRound),
+              },
+            }
+          }
+
           const nextId   = nextPlayerId(s.session.initiativeOrder, s.session.currentTurnPlayerId)
           const newRound = nextId === s.session.initiativeOrder[0]
             ? s.session.round + 1
@@ -503,6 +565,31 @@ export const useGameStore = create<GameStore>()(
               currentTurnPlayerId: nextId,
               round:               newRound,
               activeEffects:       s.session.activeEffects.filter((e) => e.expiresRound >= newRound),
+            },
+          }
+        }),
+
+      // Same role, next person. The turn is not lost when the drawn actor goes
+      // silent or drops — it moves on inside the role, and the round does not
+      // advance (decision D14). The forfeiting participant stays out of this
+      // cycle: drawActor already moved them to `drawn` when they were picked.
+      reassignActor: (eligibleParticipantIds) =>
+        set((s) => {
+          const session = s.session
+          if (!session || session.mode !== 'departmental' || !session.seats || !session.currentActor) return {}
+          const connected = eligibleParticipantIds ? new Set(eligibleParticipantIds) : null
+          const result = drawActor(session.rotation ?? {}, session.currentActor.role, session.seats, connected)
+          // Nobody else in this role is available — leave the turn with whoever
+          // holds it so the facilitator can decide, rather than silently
+          // skipping a capability out of the round.
+          if (!result || result.actor.participantId === session.currentActor.participantId) return {}
+          return {
+            session: {
+              ...session,
+              currentActor:        result.actor,
+              currentTurnPlayerId: result.actor.characterId,
+              rotation:            result.rotation,
+              roundTimerExpired:   false,
             },
           }
         }),

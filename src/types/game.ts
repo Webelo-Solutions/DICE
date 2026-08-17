@@ -210,11 +210,36 @@ export interface RollRecord {
   traitsApplied?: TraitName[]
 }
 
+// ─── Departmental mode ────────────────────────────────────────────────────────
+// One seat = one human. Several people staff the same role, and the role is what
+// takes a turn (decision D1) — so the seat map is how the engine gets from
+// "the Analyst turn came up" to "…and Cara is taking it, on her own sheet."
+export interface DepartmentalSeat {
+  participantId: string
+  characterId:   string          // their own character, or an instantiated role template
+  gameRole:      CharacterClass
+  displayName:   string
+  usesTemplate:  boolean         // on the role baseline: earns no persisted XP (D5)
+}
+
+// One role's draw state. `pool` drains as people are picked and only refills
+// once empty, so everyone staffing the role acts before anyone repeats (D3).
+export interface RotationPool {
+  pool:  string[]   // participantIds not yet drawn this cycle
+  drawn: string[]   // participantIds drawn this cycle
+}
+
+export interface CurrentActor {
+  role:          CharacterClass
+  participantId: string
+  characterId:   string
+}
+
 export interface GameSession {
   id:                        string
   scenario:                  ScenarioPack
   players:                   Character[]
-  mode:                      'solo' | 'team' | 'adversary'
+  mode:                      'solo' | 'team' | 'adversary' | 'departmental'
   initiativeOrder:           string[]   // defender players only in adversary mode
   currentTurnPlayerId:       string
   act:                       number
@@ -253,6 +278,17 @@ export interface GameSession {
   // sessions saved before this field existed simply have no key for anyone,
   // which reads the same as "nothing used yet."
   usedOnceTraits:            Record<string, TraitName[]>
+  // ── Departmental mode only; absent in solo/team/adversary sessions, and
+  //    absent from any session saved before departmental mode existed. ──
+  // Staffed roles in initiative order — at most six entries however many people
+  // joined, which is what keeps a 20-person round the same length as a 6-person
+  // one. currentTurnPlayerId still holds the acting character's id so the DM
+  // prompt, dice, and XP paths need no special-casing; currentActor is what
+  // says WHO is behind it.
+  seats?:                    DepartmentalSeat[]
+  roleInitiative?:           CharacterClass[]
+  rotation?:                 Record<string, RotationPool>
+  currentActor?:             CurrentActor | null
 }
 
 // ─── Narrative Feed ───────────────────────────────────────────────────────────

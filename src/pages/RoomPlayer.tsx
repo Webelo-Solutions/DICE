@@ -44,8 +44,19 @@ export function RoomPlayer() {
   // Hoisted above the early returns below so the turn-alert effect (which
   // needs it) can run unconditionally, per the Rules of Hooks. Safe with
   // optional chaining even before `membership`/`session` are known non-null.
-  const myCharId = participants.find((p) => p.id === membership?.participantId)?.characterId ?? null
-  const isMyTurn = !!myCharId && session?.currentTurnPlayerId === myCharId
+  // Departmental turns are held by a PARTICIPANT: the role comes up, then the
+  // rotation picks who takes it. Someone on the role baseline has no roster
+  // character, so matching on characterId would mean their turn never arrives.
+  const isDepartmental = session?.mode === 'departmental'
+  const mySeat   = isDepartmental
+    ? session?.seats?.find((s) => s.participantId === membership?.participantId) ?? null
+    : null
+  const myCharId = isDepartmental
+    ? mySeat?.characterId ?? null
+    : participants.find((p) => p.id === membership?.participantId)?.characterId ?? null
+  const isMyTurn = isDepartmental
+    ? !!membership && session?.currentActor?.participantId === membership.participantId
+    : !!myCharId && session?.currentTurnPlayerId === myCharId
 
   const [busy, setBusy]   = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -151,7 +162,13 @@ export function RoomPlayer() {
   const leave = () => { disconnectRoom(); useRoomStore.getState().clearMembership(); navigate('/') }
 
   const me     = participants.find((p) => p.id === membership.participantId)
-  const myChar = me?.character ?? null
+  // In a departmental session the sheet that resolves your rolls is the one the
+  // session seated you on — your own character when it matched your role, or
+  // the role baseline. Reading it off the participant row would show a
+  // character that isn't the one being rolled.
+  const myChar = (isDepartmental
+    ? session?.players.find((c) => c.id === mySeat?.characterId)
+    : me?.character) ?? null
 
   if (endedSnapshot) {
     const { session: endSession, feed: endFeed } = endedSnapshot
@@ -159,7 +176,13 @@ export function RoomPlayer() {
     const { perPlayer: xpByPlayer } = computeXpAwards(endSession.players, endFeed, outcome)
     const label     = outcome === 'victory' ? 'CONTAINED' : outcome === 'partial' ? 'PARTIAL' : 'BREACH'
     const color     = outcome === 'defeat' ? 'text-terminal-red' : 'text-terminal-green'
-    const myEndChar = endSession.players.find((c) => c.id === me?.characterId)
+    // Match the sheet the session actually seated us on — a template seat has
+    // no participant characterId, so `me.characterId` would find nothing and
+    // the player would be shown no result at all.
+    const myEndCharId = endSession.mode === 'departmental'
+      ? endSession.seats?.find((s) => s.participantId === membership.participantId)?.characterId
+      : me?.characterId
+    const myEndChar = endSession.players.find((c) => c.id === myEndCharId)
     const backToLobby = () => { setEndedSnapshot(null); navigate('/lobby') }
 
     return (

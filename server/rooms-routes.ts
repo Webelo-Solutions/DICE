@@ -387,6 +387,11 @@ export async function roomRoutes(app: FastifyInstance) {
       const awards = req.body?.awards ?? []
       const roomParticipants = repository.listParticipants(room.id)
       for (const award of awards) {
+        // Seats on a role baseline earn no persisted XP (decision D5). Their
+        // character ids are namespaced `tmpl:` and match no roster row, so the
+        // owner lookup below would miss anyway — this is an explicit guard so
+        // the rule is stated where it is enforced rather than being incidental.
+        if (award.characterId.startsWith('tmpl:')) continue
         const owner = roomParticipants.find((p) => p.characterId === award.characterId)?.ownerUserId
         if (!owner) continue   // no persisted owner for this character — nothing to write back
         const character = repository.listCharacters(owner).find((c) => c.id === award.characterId)
@@ -415,14 +420,32 @@ export async function roomRoutes(app: FastifyInstance) {
     const text = (req.body?.text ?? '').trim()
     if (!text) return reply.code(400).send({ error: 'Action text is required' })
     if (text.length > 1000) return reply.code(400).send({ error: 'Action is too long' })
-    if (!me.characterId) return reply.code(403).send({ error: 'Claim a character before acting' })
 
     const rs = repository.getRoomSession(room.id)
-    const session = rs?.session as { currentTurnPlayerId?: string } | null
-    if (!session || session.currentTurnPlayerId !== me.characterId) {
-      return reply.code(403).send({ error: 'It is not your turn' })
+    const session = rs?.session as {
+      currentTurnPlayerId?: string
+      currentActor?: { participantId: string; characterId: string } | null
+    } | null
+    if (!session) return reply.code(403).send({ error: 'It is not your turn' })
+
+    // Departmental turns belong to a PARTICIPANT, not a character — someone on
+    // the role baseline has no roster character at all, so gating on
+    // characterId would lock them out of every turn they are drawn for.
+    let actingCharacterId: string
+    if (room.mode === 'departmental') {
+      if (!session.currentActor || session.currentActor.participantId !== me.id) {
+        return reply.code(403).send({ error: 'It is not your turn' })
+      }
+      actingCharacterId = session.currentActor.characterId
+    } else {
+      if (!me.characterId) return reply.code(403).send({ error: 'Claim a character before acting' })
+      if (session.currentTurnPlayerId !== me.characterId) {
+        return reply.code(403).send({ error: 'It is not your turn' })
+      }
+      actingCharacterId = me.characterId
     }
-    broadcast(room.id, { type: 'action', participantId: me.id, characterId: me.characterId, displayName: me.displayName, text })
+
+    broadcast(room.id, { type: 'action', participantId: me.id, characterId: actingCharacterId, displayName: me.displayName, text })
     return reply.send({ ok: true })
   })
 

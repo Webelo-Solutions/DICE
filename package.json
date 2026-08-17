@@ -16,7 +16,8 @@
     "typecheck:server": "tsc -p tsconfig.server.json",
     "build:release": "node scripts/build-release.mjs",
     "build:docs": "node scripts/build-docs.mjs",
-    "build:uat": "node scripts/build-uat-checklist.mjs && node scripts/build-uat-checklist-xlsx.mjs"
+    "build:uat": "node scripts/build-uat-checklist.mjs && node scripts/build-uat-checklist-xlsx.mjs",
+    "verify:rotation": "tsx scripts/verify-rotation.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

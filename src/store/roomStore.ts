@@ -29,6 +29,10 @@ export interface IncomingAction {
   text:        string
   characterId: string
   displayName: string
+  // Departmental sessions match the relayed action against the participant who
+  // holds the turn, not the character: several people staff the same role, so
+  // the character id cannot distinguish them.
+  participantId: string
 }
 
 interface RoomStore {

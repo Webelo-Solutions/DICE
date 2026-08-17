@@ -23,9 +23,10 @@ interface ServerMessage {
   departments?:  Department[]
   mode?:         RoomMode
   // action relay
-  text?:        string
-  characterId?: string
-  displayName?: string
+  text?:          string
+  characterId?:   string
+  displayName?:   string
+  participantId?: string
   // dm_stream
   narration?:   string
   error?:   string
@@ -90,7 +91,10 @@ export function connectRoom(code: string, token: string): void {
       // A player's turn action, relayed by the server. Only the facilitator's
       // client processes it (it runs the game engine).
       if (useRoomStore.getState().membership?.role === 'facilitator' && msg.text && msg.characterId) {
-        useRoomStore.getState().setIncomingAction({ text: msg.text, characterId: msg.characterId, displayName: msg.displayName ?? '' })
+        useRoomStore.getState().setIncomingAction({
+          text: msg.text, characterId: msg.characterId,
+          displayName: msg.displayName ?? '', participantId: msg.participantId ?? '',
+        })
       }
     } else if (msg.type === 'error') {
       // Token rejected by the server — drop membership and stop reconnecting.

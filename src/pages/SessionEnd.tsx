@@ -11,6 +11,7 @@ import type { LevelUpEvent, LevelUpChoice } from '../utils/leveling'
 import { generateLearningPath } from '../utils/learningPath'
 import { LevelUpModal } from '../components/LevelUpModal'
 import { launchCampaignScenario } from '../utils/campaignPlay'
+import { isTemplateCharacterId } from '../utils/departmentalSession'
 import { ALL_SCENARIOS } from '../data/scenarios'
 import type { Campaign } from '../types/campaign'
 
@@ -33,7 +34,14 @@ export function SessionEnd() {
     xpApplied.current = true
 
     const participants = session.players
-    const events  = detectLevelUps(participants, result.xpByPlayer)
+    // Role-baseline sheets are ephemeral: they exist only for the duration of
+    // the session and earn no persisted XP (decision D5), so they can cross a
+    // level threshold on paper but have nothing to level. Offering that choice
+    // would queue a modal whose result is discarded.
+    const events  = detectLevelUps(
+      participants.filter((p) => !isTemplateCharacterId(p.id)),
+      result.xpByPlayer,
+    )
 
     // Build and persist the session record for analytics
     const { feed, recordSession, applySessionToOrg } = useGameStore.getState()
