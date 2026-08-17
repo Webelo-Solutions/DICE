@@ -57,6 +57,13 @@
       "when": 1786969482606,
       "tag": "0007_sad_wendell_rand",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1786998527207,
+      "tag": "0008_chief_jack_power",
+      "breakpoints": true
     }
   ]
 }

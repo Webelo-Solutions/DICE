@@ -11,6 +11,7 @@ import {
   rooms,
   participants,
   departments,
+  participantEvents,
   roomSessions,
   contentPacks,
   injectsCatalog,
@@ -19,7 +20,7 @@ import {
 } from './schema'
 import type {
   DiceRepository, RoomRow, RoomInsert, ParticipantRow, ParticipantInsert, RoomSessionRow, ContentPackRow,
-  DepartmentRow, DepartmentInsert,
+  DepartmentRow, DepartmentInsert, ParticipantEventRow, ParticipantEventInsert,
   UserRow, UserInsert, AuthSessionRow, AuthSessionInsert,
 } from './repository'
 import type { Character, CriticalInjectCatalogEntry } from '../../src/types/game'
@@ -350,6 +351,16 @@ export class SqliteRepository implements DiceRepository {
     if (Object.keys(updates).length === 0) return
     this.db.update(departments).set(updates).where(eq(departments.id, id)).run()
   }
+  recordParticipantEvent(row: ParticipantEventInsert): void {
+    this.db.insert(participantEvents).values(row).run()
+  }
+  listParticipantEvents(roomId: string, sessionId?: string): ParticipantEventRow[] {
+    const where = sessionId
+      ? and(eq(participantEvents.roomId, roomId), eq(participantEvents.sessionId, sessionId))
+      : eq(participantEvents.roomId, roomId)
+    return this.db.select().from(participantEvents).where(where).all()
+  }
+
   deleteDepartment(id: string): void {
     // Detach members before dropping the row. Without this, participants keep a
     // department_id pointing at nothing and quietly vanish from every grouped

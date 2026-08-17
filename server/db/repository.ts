@@ -3,7 +3,7 @@ import type { Campaign, CustomScenario, SaveSlot } from '../../src/types/campaig
 import type { SessionRecord } from '../../src/types/history'
 import type { OrgState } from '../../src/types/orgState'
 import type { OrgProfile } from '../../src/types/orgProfile'
-import { rooms, participants, departments, roomSessions, contentPacks, users, authSessions } from './schema'
+import { rooms, participants, departments, participantEvents, roomSessions, contentPacks, users, authSessions } from './schema'
 import type { Dicepack } from '../../src/content/dicepackSchema'
 
 // Row types inferred from the schema (include server-only fields like hashes).
@@ -13,6 +13,8 @@ export type ParticipantRow = typeof participants.$inferSelect
 export type ParticipantInsert = typeof participants.$inferInsert
 export type DepartmentRow = typeof departments.$inferSelect
 export type DepartmentInsert = typeof departments.$inferInsert
+export type ParticipantEventRow = typeof participantEvents.$inferSelect
+export type ParticipantEventInsert = typeof participantEvents.$inferInsert
 export type RoomSessionRow = typeof roomSessions.$inferSelect
 export type ContentPackRow = typeof contentPacks.$inferSelect
 
@@ -126,6 +128,13 @@ export interface DiceRepository {
   // delete can never strand rows pointing at a department that no longer
   // exists (SQLite has no FK cascade enabled here).
   deleteDepartment(id: string): void
+
+  // ── Participant activity ledger (departmental reporting) ──
+  // Append-only. Written during play so contributions that leave no mark on the
+  // narrative feed — an unadopted suggestion, a forfeited turn — are still
+  // attributable to a person afterwards.
+  recordParticipantEvent(row: ParticipantEventInsert): void
+  listParticipantEvents(roomId: string, sessionId?: string): ParticipantEventRow[]
 
   getRoomSession(roomId: string): RoomSessionRow | null
   upsertRoomSession(roomId: string, session: unknown, feed: unknown): void

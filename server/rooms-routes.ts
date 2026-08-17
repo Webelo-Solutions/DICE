@@ -412,7 +412,7 @@ export async function roomRoutes(app: FastifyInstance) {
   // The server validates the turn against the live session, then relays the
   // declared action to the room (the facilitator's engine processes it). This
   // is the server-enforced turn gate; the facilitator never trusts the client.
-  app.post<{ Params: { code: string }; Body: { text?: string } }>('/rooms/:code/action', async (req, reply) => {
+  app.post<{ Params: { code: string }; Body: { text?: string; adoptedFrom?: string } }>('/rooms/:code/action', async (req, reply) => {
     if (!authenticate(req, reply)) return
     const me = (req as AuthedRequest).participant!
     const room = repository.getRoomByCode(req.params.code.toUpperCase())
@@ -423,6 +423,8 @@ export async function roomRoutes(app: FastifyInstance) {
 
     const rs = repository.getRoomSession(room.id)
     const session = rs?.session as {
+      id?: string
+      round?: number
       currentTurnPlayerId?: string
       currentActor?: { participantId: string; characterId: string } | null
     } | null
@@ -445,9 +447,130 @@ export async function roomRoutes(app: FastifyInstance) {
       actingCharacterId = me.characterId
     }
 
+    // Attribute the turn, and credit whoever's suggestion was taken. Adoption
+    // is recorded against the SUGGESTER — "advice the room acted on" is the
+    // measure that matters, and it belongs to the person who gave it.
+    if (room.mode === 'departmental') {
+      const now = Date.now()
+      repository.recordParticipantEvent({
+        id: randomUUID(), roomId: room.id, sessionId: session.id ?? null, participantId: me.id,
+        kind: 'turn_taken', round: session.round ?? null, at: now,
+        payload: { text, adoptedFrom: req.body?.adoptedFrom ?? null },
+      })
+      const adoptedFrom = req.body?.adoptedFrom
+      if (adoptedFrom && adoptedFrom !== me.id) {
+        const author = repository.getParticipantById(adoptedFrom)
+        if (author && author.roomId === room.id) {
+          repository.recordParticipantEvent({
+            id: randomUUID(), roomId: room.id, sessionId: session.id ?? null, participantId: adoptedFrom,
+            kind: 'suggestion_adopted', round: session.round ?? null, at: now,
+            payload: { adoptedBy: me.id },
+          })
+        }
+      }
+    }
+
     broadcast(room.id, { type: 'action', participantId: me.id, characterId: actingCharacterId, displayName: me.displayName, text })
     return reply.send({ ok: true })
   })
+
+  // ── Deliberation: a teammate pushes a suggested action to whoever is up ──
+  // This is what the other nineteen people do while one person acts (decision
+  // D10). Authorised against the live session, so the facilitator turning
+  // deliberation off mid-session takes effect immediately and cannot be
+  // bypassed by a client that kept its input box on screen.
+  app.post<{ Params: { code: string }; Body: { text?: string } }>('/rooms/:code/suggest', async (req, reply) => {
+    if (!authenticate(req as AuthedRequest, reply)) return
+    const me = (req as AuthedRequest).participant!
+    const room = repository.getRoomByCode(req.params.code.toUpperCase())
+    if (!room || me.roomId !== room.id) return reply.code(403).send({ error: 'Not a member of this room' })
+    if (room.mode !== 'departmental') return reply.code(409).send({ error: 'Deliberation is a departmental-session feature' })
+    // The facilitator runs the DM. Them feeding players their actions would
+    // blur the line between the exercise and the person grading it — and under
+    // 'anyone' scope nothing else would stop it.
+    if (me.role === 'facilitator') return reply.code(403).send({ error: 'The facilitator does not advise players' })
+
+    const text = (req.body?.text ?? '').trim()
+    if (!text) return reply.code(400).send({ error: 'A suggestion is required' })
+    if (text.length > 500) return reply.code(400).send({ error: 'Keep a suggestion under 500 characters' })
+
+    const rs = repository.getRoomSession(room.id)
+    const session = rs?.session as {
+      id?: string
+      round?: number
+      deliberation?: { enabled?: boolean; scope?: string }
+      currentActor?: { participantId: string; role: string } | null
+    } | null
+    if (!session?.deliberation?.enabled) return reply.code(409).send({ error: 'Deliberation is off for this session' })
+
+    const actor = session.currentActor
+    if (!actor) return reply.code(409).send({ error: 'Nobody is acting right now' })
+    if (actor.participantId === me.id) return reply.code(409).send({ error: 'You are the one acting' })
+
+    // Scope check. The point of scoping is to keep a 90-second window readable,
+    // so it is enforced here rather than trusted to the client hiding the box.
+    const scope = session.deliberation.scope ?? 'role'
+    if (scope === 'role' && me.gameRole !== actor.role) {
+      return reply.code(403).send({ error: `Only the ${actor.role} bench can advise this turn` })
+    }
+    if (scope === 'department') {
+      const actorRow = repository.getParticipantById(actor.participantId)
+      if (!actorRow?.departmentId || actorRow.departmentId !== me.departmentId) {
+        return reply.code(403).send({ error: 'Only their department can advise this turn' })
+      }
+    }
+
+    const now = Date.now()
+    const id = randomUUID()
+    // Recorded before broadcast: a suggestion the actor ignores leaves no trace
+    // in the narrative feed, but it is still a contribution the after-action
+    // report has to be able to attribute.
+    repository.recordParticipantEvent({
+      id, roomId: room.id, sessionId: session.id ?? null, participantId: me.id,
+      kind: 'suggestion', round: session.round ?? null, at: now,
+      payload: { text, forParticipantId: actor.participantId },
+    })
+    broadcast(room.id, {
+      type: 'suggestion',
+      suggestion: {
+        id, participantId: me.id, displayName: me.displayName,
+        gameRole: me.gameRole ?? null, text,
+        forParticipantId: actor.participantId, createdAt: now,
+      },
+    })
+    return reply.code(201).send({ ok: true, id })
+  })
+
+  // ── Facilitator reports a forfeited turn ──
+  // A forfeit is a clock event in the facilitator's browser; the server cannot
+  // observe it, and it leaves no trace in the narrative feed. Without this the
+  // ledger would show a participant who was drawn four times and acted twice
+  // as simply having acted twice — losing the fact that they went silent.
+  // Deliberately narrow: only the facilitator, only this one event kind.
+  app.post<{ Params: { code: string }; Body: { participantId?: string; round?: number } }>(
+    '/rooms/:code/forfeit', async (req, reply) => {
+      if (!authenticate(req as AuthedRequest, reply)) return
+      const me = (req as AuthedRequest).participant!
+      const room = repository.getRoomByCode(req.params.code.toUpperCase())
+      if (!room || me.roomId !== room.id) return reply.code(403).send({ error: 'Not a member of this room' })
+      if (me.role !== 'facilitator') return reply.code(403).send({ error: 'Only the facilitator records a forfeit' })
+
+      const participantId = req.body?.participantId
+      if (!participantId) return reply.code(400).send({ error: 'participantId is required' })
+      const target = repository.getParticipantById(participantId)
+      if (!target || target.roomId !== room.id) return reply.code(404).send({ error: 'Participant not found' })
+
+      const rs = repository.getRoomSession(room.id)
+      const session = rs?.session as { id?: string } | null
+      repository.recordParticipantEvent({
+        id: randomUUID(), roomId: room.id, sessionId: session?.id ?? null,
+        participantId, kind: 'turn_forfeit',
+        round: typeof req.body?.round === 'number' ? req.body.round : null,
+        at: Date.now(), payload: null,
+      })
+      return reply.code(201).send({ ok: true })
+    },
+  )
 
   // ── Facilitator registers the AI provider key (held in memory) ──
   app.put<{ Params: { code: string }; Body: ProviderConfig }>('/rooms/:code/dm-provider', async (req, reply) => {

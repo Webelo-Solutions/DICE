@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Character, GameSession, FeedEntry, ScenarioPack, SessionResult, TimerDifficulty, TraitName, DepartmentalSeat } from '../types/game'
+import type { Character, GameSession, FeedEntry, ScenarioPack, SessionResult, TimerDifficulty, TraitName, DepartmentalSeat, DeliberationConfig } from '../types/game'
 import { orderRolesByInitiative, buildRotation, advanceRole, drawActor } from '../engine/rotation'
 import type { DMResponse } from '../types/dm'
 import { applyLevelUp } from '../utils/leveling'
@@ -37,7 +37,7 @@ interface GameStore {
 
   // `seats` is departmental mode only: it maps each participant to the character
   // that resolves their rolls, and drives the role initiative and rotation.
-  initSession:  (scenario: ScenarioPack, players: Character[], mode: GameSession['mode'], timerDifficulty: TimerDifficulty, adversaryPlayerId?: string, adversaryClass?: AdversaryClass, seats?: DepartmentalSeat[]) => void
+  initSession:  (scenario: ScenarioPack, players: Character[], mode: GameSession['mode'], timerDifficulty: TimerDifficulty, adversaryPlayerId?: string, adversaryClass?: AdversaryClass, seats?: DepartmentalSeat[], deliberation?: DeliberationConfig) => void
 
   pendingAction:  string
   setAction:      (action: string) => void
@@ -57,6 +57,10 @@ interface GameStore {
   // lets the turn timer run out or drops off (decision D14) — the role still
   // gets its action rather than losing it.
   reassignActor:    (eligibleParticipantIds?: string[]) => void
+  // Facilitator turns deliberation on/off or changes its scope mid-session.
+  // Held on the session so the change reaches every client — and the server's
+  // authorisation check — through the sync that already exists.
+  setDeliberation:  (config: DeliberationConfig) => void
   // Records that a player has spent a once-per-session trait (Composure,
   // Rally, Second Wind) this session, so it can't be used again.
   markTraitUsed:    (playerId: string, trait: TraitName) => void
@@ -161,7 +165,7 @@ export const useGameStore = create<GameStore>()(
         })),
       clearHistory: () => set({ sessionHistory: [] }),
 
-      initSession: (scenario, players, mode, timerDifficulty, adversaryPlayerId, adversaryClass, seats) => {
+      initSession: (scenario, players, mode, timerDifficulty, adversaryPlayerId, adversaryClass, seats, deliberation) => {
         // In adversary mode, exclude the adversary from the defender initiative order
         const defenders = mode === 'adversary' && adversaryPlayerId
           ? players.filter((p) => p.id !== adversaryPlayerId)
@@ -245,6 +249,11 @@ export const useGameStore = create<GameStore>()(
             roleInitiative,
             rotation:     opening?.rotation ?? buildRotation(seats!),
             currentActor: opening?.actor ?? null,
+            // Default ON, scoped to the acting role. At six turns a round most
+            // people are watching most of the time, so the coaching layer is
+            // what keeps them in the exercise — off is the deliberate choice,
+            // not the accident. Role scope keeps a 90-second window readable.
+            deliberation: deliberation ?? { enabled: true, scope: 'role' as const },
           } : {}),
         }
         set({ session, feed: [], result: null, isDMThinking: true })
@@ -568,6 +577,9 @@ export const useGameStore = create<GameStore>()(
             },
           }
         }),
+
+      setDeliberation: (deliberation) =>
+        set((s) => (s.session ? { session: { ...s.session, deliberation } } : {})),
 
       // Same role, next person. The turn is not lost when the drawn actor goes
       // silent or drops — it moves on inside the role, and the round does not

@@ -170,6 +170,28 @@ export const participants = sqliteTable('participants', {
   roomIdx:  index('participants_room_idx').on(t.roomId),
 }))
 
+// Append-only ledger of what each participant actually did, which is the only
+// way to report on twenty PEOPLE rather than six characters. Written as play
+// happens rather than reconstructed from the feed afterwards, because a
+// suggestion nobody adopted leaves no trace in the feed at all — and "offered
+// good advice that was ignored" is exactly the contribution the after-action
+// report needs to be able to see.
+//
+// kind: turn_taken | turn_forfeit | suggestion | suggestion_adopted
+export const participantEvents = sqliteTable('participant_events', {
+  id:            text('id').primaryKey(),
+  roomId:        text('room_id').notNull(),
+  sessionId:     text('session_id'),      // GameSession.id — groups a room's successive sessions
+  participantId: text('participant_id').notNull(),
+  kind:          text('kind').notNull(),
+  round:         integer('round'),
+  at:            integer('at').notNull(),
+  payload:       text('payload', { mode: 'json' }),
+}, (t) => ({
+  roomIdx:    index('participant_events_room_idx').on(t.roomId),
+  sessionIdx: index('participant_events_session_idx').on(t.sessionId),
+}))
+
 // One row per room holding that room's live session + feed.
 export const roomSessions = sqliteTable('room_sessions', {
   roomId:    text('room_id').primaryKey(),

@@ -1,4 +1,4 @@
-import type { GameSession } from '../types/game'
+import type { GameSession, DeliberationConfig } from '../types/game'
 import { seatsForRole } from '../engine/rotation'
 
 interface Props {
@@ -7,12 +7,15 @@ interface Props {
   // Facilitator only — hand the current role's turn to the next person in its
   // pool. Undefined for players, who see the panel read-only.
   onReassign?:  () => void
+  // Facilitator only — flip deliberation mid-session. Some exercises open with
+  // coaching on and tighten to unaided decisions as they escalate.
+  onSetDeliberation?: (config: DeliberationConfig) => void
 }
 
 // Replaces the per-character InitiativeTracker in departmental sessions. The
 // order here is ROLES, not people — that is the whole point of the mode — and
 // each role shows who is up and how much of its rotation is still unspent.
-export function RotationPanel({ session, connectedIds, onReassign }: Props) {
+export function RotationPanel({ session, connectedIds, onReassign, onSetDeliberation }: Props) {
   const { roleInitiative, seats, rotation, currentActor } = session
   if (!roleInitiative || !seats) return null
 
@@ -84,6 +87,39 @@ export function RotationPanel({ session, connectedIds, onReassign }: Props) {
       <div className="text-[9px] text-terminal-dim/50 leading-relaxed">
         Everyone staffing a role acts once before anyone repeats.
       </div>
+
+      {onSetDeliberation && (
+        <div className="pt-2 border-t border-terminal-border space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] text-terminal-dim tracking-widest uppercase">Deliberation</span>
+            <button
+              onClick={() => onSetDeliberation({
+                enabled: !session.deliberation?.enabled,
+                scope:   session.deliberation?.scope ?? 'role',
+              })}
+              className={`text-[9px] px-1.5 py-0.5 rounded border tracking-widest uppercase transition-colors ${
+                session.deliberation?.enabled
+                  ? 'border-terminal-blue/50 bg-terminal-blue/10 text-terminal-blue'
+                  : 'border-terminal-border text-terminal-dim hover:text-white'}`}>
+              {session.deliberation?.enabled ? 'On' : 'Off'}
+            </button>
+          </div>
+          {session.deliberation?.enabled && (
+            <div className="flex gap-1">
+              {(['role', 'department', 'anyone'] as const).map((scope) => (
+                <button key={scope}
+                  onClick={() => onSetDeliberation({ enabled: true, scope })}
+                  className={`flex-1 text-[9px] py-0.5 rounded border transition-colors ${
+                    (session.deliberation?.scope ?? 'role') === scope
+                      ? 'border-terminal-blue/50 text-terminal-blue'
+                      : 'border-terminal-border/50 text-terminal-dim/70 hover:text-white'}`}>
+                  {scope === 'role' ? 'Role' : scope === 'department' ? 'Dept' : 'All'}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

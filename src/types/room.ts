@@ -72,6 +72,22 @@ export interface RoomMembership {
   token:       string
 }
 
+// A teammate's proposed action, pushed to whoever is currently acting. These
+// are transient: they belong to one turn and are dropped when it moves on. The
+// durable record lives server-side in participant_events, so a suggestion still
+// counts toward its author's contribution even when the actor ignores it.
+export interface Suggestion {
+  id:            string
+  participantId: string
+  displayName:   string
+  gameRole:      CharacterClass | null
+  text:          string
+  // The turn this belongs to — a suggestion that arrives just as the turn
+  // changes must not surface to the next actor as if it were meant for them.
+  forParticipantId: string
+  createdAt:     number
+}
+
 // How many participants currently staff each of the six roles. Drives the join
 // screen's role picker and the lobby's staffing panel — an unstaffed role is
 // skipped entirely in play (decision D7), so seeing the zeroes before the

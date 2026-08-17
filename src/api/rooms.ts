@@ -84,8 +84,26 @@ export const roomApi = {
       method: 'POST', headers: { authorization: `Bearer ${roomToken}` }, body: JSON.stringify({ awards }),
     }),
 
-  submitAction: (code: string, token: string, text: string) =>
+  // `adoptedFrom` is the participant whose suggestion the actor took, so the
+  // credit lands on the person who gave the advice rather than the one who
+  // typed it in.
+  submitAction: (code: string, token: string, text: string, adoptedFrom?: string) =>
     req<{ ok: boolean }>(`/rooms/${encodeURIComponent(code)}/action`, {
+      method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ text, adoptedFrom }),
+    }),
+
+  // Facilitator-only: record that a drawn actor let their turn lapse. The
+  // server cannot see the round timer, and a forfeit leaves no trace in the
+  // feed, so it has to be reported for the ledger to be complete.
+  recordForfeit: (code: string, token: string, participantId: string, round: number) =>
+    req<{ ok: boolean }>(`/rooms/${encodeURIComponent(code)}/forfeit`, {
+      method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ participantId, round }),
+    }),
+
+  // Push a suggested action to whoever is currently up (departmental only).
+  // The server authorises this against the live session's deliberation scope.
+  suggest: (code: string, token: string, text: string) =>
+    req<{ ok: boolean; id: string }>(`/rooms/${encodeURIComponent(code)}/suggest`, {
       method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ text }),
     }),
 

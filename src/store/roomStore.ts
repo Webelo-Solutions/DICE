@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Participant, Department, RoomRole, RoomMode } from '../types/room'
+import type { Participant, Department, Suggestion, RoomRole, RoomMode } from '../types/room'
 
 // What this client knows about the room it belongs to. The token is the bearer
 // credential (same model as M1). Persisted so a refresh rejoins the same room.
@@ -39,6 +39,11 @@ interface RoomStore {
   membership:   Membership | null
   participants: Participant[]   // live, from the WebSocket lobby broadcasts
   departments:  Department[]    // live, broadcast alongside participants
+  // Suggestions for the turn in progress. Deliberately transient — advice is
+  // about the decision in front of the room right now, and carrying it into
+  // the next turn would put words in the next actor's mouth. The durable copy
+  // lives server-side in participant_events.
+  suggestions:  Suggestion[]
   connected:    boolean         // WebSocket connection state
   incomingAction: IncomingAction | null   // facilitator-side inbox for a player's turn
   streamingNarration: string    // live DM narration streamed from the server (typewriter)
@@ -47,6 +52,9 @@ interface RoomStore {
   clearMembership: () => void
   setParticipants: (p: Participant[]) => void
   setDepartments:  (d: Department[]) => void
+  addSuggestion:   (s: Suggestion) => void
+  // Called when the turn moves on, so the next actor starts from a clean slate.
+  clearSuggestions: () => void
   setConnected:    (c: boolean) => void
   setIncomingAction:   (a: IncomingAction) => void
   clearIncomingAction: () => void
@@ -60,13 +68,20 @@ export const useRoomStore = create<RoomStore>()(
       membership:     null,
       participants:   [],
       departments:    [],
+      suggestions:    [],
       connected:      false,
       incomingAction: null,
       streamingNarration: '',
       setMembership:   (membership) => set({ membership }),
-      clearMembership: () => set({ membership: null, participants: [], departments: [], connected: false, incomingAction: null, streamingNarration: '' }),
+      clearMembership: () => set({ membership: null, participants: [], departments: [], suggestions: [], connected: false, incomingAction: null, streamingNarration: '' }),
       setParticipants: (participants) => set({ participants }),
       setDepartments:  (departments) => set({ departments }),
+      // Ignore a duplicate id — a reconnect can replay a broadcast, and the
+      // same advice appearing twice reads as two people agreeing.
+      addSuggestion:   (suggestion) => set((s) => s.suggestions.some((x) => x.id === suggestion.id)
+        ? {}
+        : { suggestions: [...s.suggestions, suggestion] }),
+      clearSuggestions: () => set({ suggestions: [] }),
       setConnected:    (connected) => set({ connected }),
       setIncomingAction:   (incomingAction) => set({ incomingAction }),
       clearIncomingAction: () => set({ incomingAction: null }),

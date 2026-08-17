@@ -1,7 +1,7 @@
 import { useGameStore } from '../store/gameStore'
 import { useRoomStore } from '../store/roomStore'
 import type { GameSession, FeedEntry } from '../types/game'
-import type { Participant, Department, RoomMode } from '../types/room'
+import type { Participant, Department, Suggestion, RoomMode } from '../types/room'
 
 // Connects to a room's real-time channel and applies server broadcasts to the
 // stores. Live session/feed updates flow into the gameStore; lobby updates into
@@ -16,7 +16,8 @@ let intentionalClose = false
 let facilitatorAppliedSnapshot = false
 
 interface ServerMessage {
-  type:    'session' | 'lobby' | 'action' | 'dm_stream' | 'error'
+  type:    'session' | 'lobby' | 'action' | 'dm_stream' | 'suggestion' | 'error'
+  suggestion?: Suggestion
   session?: GameSession | null
   feed?:    FeedEntry[]
   participants?: Participant[]
@@ -63,6 +64,13 @@ export function connectRoom(code: string, token: string): void {
       // a dept_lead frozen on whatever state they held when they were promoted.
       // The facilitator only takes the initial snapshot (restore on reconnect),
       // then drives locally.
+      // Advice belongs to the decision it was given for. When the turn moves to
+      // someone else, drop it rather than showing the next actor a list of
+      // suggestions written for the last one.
+      const prevActor = useGameStore.getState().session?.currentActor?.participantId
+      const nextActor = msg.session?.currentActor?.participantId
+      if (prevActor !== nextActor) useRoomStore.getState().clearSuggestions()
+
       if (role && role !== 'facilitator') {
         useGameStore.setState({ session: msg.session ?? null, feed: msg.feed ?? [] })
       } else if (!facilitatorAppliedSnapshot) {
@@ -71,6 +79,11 @@ export function connectRoom(code: string, token: string): void {
       }
       // The final narration is now in the feed — clear the live streaming preview.
       useRoomStore.getState().clearStreamingNarration()
+    } else if (msg.type === 'suggestion') {
+      // Broadcast to the whole room, not just the actor — teammates seeing what
+      // has already been said is what stops five people suggesting the same
+      // thing, and the facilitator needs it to judge the room's thinking.
+      if (msg.suggestion) useRoomStore.getState().addSuggestion(msg.suggestion)
     } else if (msg.type === 'dm_stream') {
       useRoomStore.getState().setStreamingNarration(msg.narration ?? '')
     } else if (msg.type === 'lobby') {

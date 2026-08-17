@@ -11,6 +11,7 @@ import { ScenarioClock, RoundTimer } from '../components/Timers'
 import { CharacterCard } from '../components/CharacterCard'
 import { InitiativeTracker } from '../components/InitiativeTracker'
 import { RotationPanel } from '../components/RotationPanel'
+import { DeliberationPanel } from '../components/DeliberationPanel'
 import { ActionMenu } from '../components/ActionMenu'
 import { callDM, callDMHint } from '../engine/dmClient'
 import { callAdversaryOptions, callAdversaryNarrate, getEvasionModifier } from '../engine/adversaryClient'
@@ -39,7 +40,7 @@ export function GameSession() {
   const {
     session, feed, isDMThinking, providerConfig,
     appendFeed, applyDMResponse, applyAdversaryRoll, markRoundTimerExpired, advanceTurn, endSession,
-    updateSessionPlayer, markTraitUsed, reassignActor,
+    updateSessionPlayer, markTraitUsed, reassignActor, setDeliberation,
   } = store
 
   const { speakChunk, flushChunks, speak: speakDM, cancel: cancelSpeech } = useVoiceDM()
@@ -512,6 +513,13 @@ export function GameSession() {
     if (isDepartmental && session?.currentActor) {
       const forfeiting = session.currentActor
       const seat = session.seats?.find((s) => s.participantId === forfeiting.participantId)
+      // Record it whether or not anyone is available to pick the turn up — the
+      // fact that this person went silent is the reportable event either way.
+      const membership = useRoomStore.getState().membership
+      if (membership?.role === 'facilitator') {
+        roomApi.recordForfeit(membership.code, membership.token, forfeiting.participantId, session.round)
+          .catch((e) => console.error('[forfeit]', e))
+      }
       reassignActor(eligibleIds)
       const next = useGameStore.getState().session?.currentActor
       if (next && next.participantId !== forfeiting.participantId) {
@@ -537,6 +545,13 @@ export function GameSession() {
       timestamp: Date.now(),
     })
   }
+
+  // The facilitator drives turns locally and so never applies the session
+  // broadcast that clears suggestions for everyone else. Without this their
+  // panel would accumulate every suggestion of the whole session.
+  useEffect(() => {
+    useRoomStore.getState().clearSuggestions()
+  }, [session?.currentActor?.participantId])
 
   // ── Adversary phase: trigger when a new round starts in adversary mode ────
   const prevRoundRef = useRef(1)
@@ -970,7 +985,14 @@ export function GameSession() {
                 session={session}
                 connectedIds={new Set(connectedIds)}
                 onReassign={roomRole === 'facilitator' ? () => reassignActor(eligibleIds) : undefined}
+                onSetDeliberation={roomRole === 'facilitator' ? setDeliberation : undefined}
               />
+              {/* The facilitator watches the bench without joining it — what the
+                  room is telling the actor is the clearest live read on whether
+                  they are engaged or drifting. */}
+              {session.deliberation?.enabled && (
+                <DeliberationPanel session={session} me={null} isMyTurn={false} />
+              )}
               {currentPlayer && (
                 <div className="space-y-2">
                   <div className="text-[10px] text-terminal-dim tracking-widest uppercase">Acting Sheet</div>
