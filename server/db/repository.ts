@@ -3,7 +3,7 @@ import type { Campaign, CustomScenario, SaveSlot } from '../../src/types/campaig
 import type { SessionRecord } from '../../src/types/history'
 import type { OrgState } from '../../src/types/orgState'
 import type { OrgProfile } from '../../src/types/orgProfile'
-import { rooms, participants, roomSessions, contentPacks, users, authSessions } from './schema'
+import { rooms, participants, departments, roomSessions, contentPacks, users, authSessions } from './schema'
 import type { Dicepack } from '../../src/content/dicepackSchema'
 
 // Row types inferred from the schema (include server-only fields like hashes).
@@ -11,6 +11,8 @@ export type RoomRow = typeof rooms.$inferSelect
 export type RoomInsert = typeof rooms.$inferInsert
 export type ParticipantRow = typeof participants.$inferSelect
 export type ParticipantInsert = typeof participants.$inferInsert
+export type DepartmentRow = typeof departments.$inferSelect
+export type DepartmentInsert = typeof departments.$inferInsert
 export type RoomSessionRow = typeof roomSessions.$inferSelect
 export type ContentPackRow = typeof contentPacks.$inferSelect
 
@@ -108,8 +110,22 @@ export interface DiceRepository {
 
   addParticipant(row: ParticipantInsert): void
   getParticipantByTokenHash(tokenHash: string): ParticipantRow | null
+  getParticipantById(id: string): ParticipantRow | null
   listParticipants(roomId: string): ParticipantRow[]
   touchParticipant(id: string): void
+  // Facilitator-driven edits to a seat (room role, in-game role, department).
+  // Deliberately narrow — the token hash and owner are never updatable here.
+  updateParticipant(id: string, updates: Partial<Pick<ParticipantRow, 'role' | 'gameRole' | 'departmentId' | 'displayName'>>): void
+
+  // ── Departments (departmental mode; organisational only — decision D2) ──
+  listDepartments(roomId: string): DepartmentRow[]
+  getDepartmentById(id: string): DepartmentRow | null
+  createDepartment(row: DepartmentInsert): void
+  updateDepartment(id: string, updates: Partial<Pick<DepartmentRow, 'name' | 'leadParticipantId'>>): void
+  // Clears department_id on every participant in the department first, so a
+  // delete can never strand rows pointing at a department that no longer
+  // exists (SQLite has no FK cascade enabled here).
+  deleteDepartment(id: string): void
 
   getRoomSession(roomId: string): RoomSessionRow | null
   upsertRoomSession(roomId: string, session: unknown, feed: unknown): void

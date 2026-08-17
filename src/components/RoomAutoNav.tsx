@@ -13,7 +13,9 @@ export function RoomAutoNav() {
   const sessionStatus = useGameStore((s) => s.session?.status ?? null)
 
   useEffect(() => {
-    if (!membership || membership.role !== 'player') return
+    // Department leads take turns like anyone else, so they follow the same
+    // auto-navigation — only the facilitator steers themselves.
+    if (!membership || membership.role === 'facilitator') return
     const onRoomPage = location.pathname === '/lobby' || location.pathname === '/play'
     if (!onRoomPage) return   // don't yank players who navigated elsewhere on purpose
 

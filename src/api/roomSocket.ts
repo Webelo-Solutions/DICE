@@ -1,7 +1,7 @@
 import { useGameStore } from '../store/gameStore'
 import { useRoomStore } from '../store/roomStore'
 import type { GameSession, FeedEntry } from '../types/game'
-import type { Participant } from '../types/room'
+import type { Participant, Department, RoomMode } from '../types/room'
 
 // Connects to a room's real-time channel and applies server broadcasts to the
 // stores. Live session/feed updates flow into the gameStore; lobby updates into
@@ -20,6 +20,8 @@ interface ServerMessage {
   session?: GameSession | null
   feed?:    FeedEntry[]
   participants?: Participant[]
+  departments?:  Department[]
+  mode?:         RoomMode
   // action relay
   text?:        string
   characterId?: string
@@ -54,9 +56,13 @@ export function connectRoom(code: string, token: string): void {
     try { msg = JSON.parse(event.data) } catch { return }
     if (msg.type === 'session') {
       const role = useRoomStore.getState().membership?.role
-      // Players always render the synced state. The facilitator only takes the
-      // initial snapshot (restore on reconnect), then drives locally.
-      if (role === 'player') {
+      // Everyone who is NOT the facilitator renders the synced state — that
+      // includes department leads, who are players with extra lobby powers and
+      // no authority over the session. Testing for 'player' by name would leave
+      // a dept_lead frozen on whatever state they held when they were promoted.
+      // The facilitator only takes the initial snapshot (restore on reconnect),
+      // then drives locally.
+      if (role && role !== 'facilitator') {
         useGameStore.setState({ session: msg.session ?? null, feed: msg.feed ?? [] })
       } else if (!facilitatorAppliedSnapshot) {
         useGameStore.setState({ session: msg.session ?? null, feed: msg.feed ?? [] })
@@ -68,6 +74,18 @@ export function connectRoom(code: string, token: string): void {
       useRoomStore.getState().setStreamingNarration(msg.narration ?? '')
     } else if (msg.type === 'lobby') {
       useRoomStore.getState().setParticipants(msg.participants ?? [])
+      useRoomStore.getState().setDepartments(msg.departments ?? [])
+      // The server owns the room role: a facilitator promoting someone to
+      // department lead has to reach that client's own membership, or they
+      // keep rendering the plain player view until they refresh.
+      const state = useRoomStore.getState()
+      const me = msg.participants?.find((p) => p.id === state.membership?.participantId)
+      const mode = msg.mode ?? state.membership?.mode
+      if (state.membership && (
+        (me && me.role !== state.membership.role) || mode !== state.membership.mode
+      )) {
+        state.setMembership({ ...state.membership, role: me?.role ?? state.membership.role, mode })
+      }
     } else if (msg.type === 'action') {
       // A player's turn action, relayed by the server. Only the facilitator's
       // client processes it (it runs the game engine).

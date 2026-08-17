@@ -115,16 +115,38 @@ export const rooms = sqliteTable('rooms', {
   name:                  text('name').notNull(),
   facilitatorSecretHash: text('facilitator_secret_hash').notNull(),  // scrypt salt:hash
   status:                text('status').notNull().default('lobby'),  // lobby | active | ended
+  // standard  = up to 6 players, one character each (the original model)
+  // departmental = up to ~24 participants fanned into the 6 roles; the role
+  //   takes the turn and a rotation picks who acts (see docs — decision D1).
+  // Set at creation and fixed for the room's life: it decides the join flow,
+  // which has to branch before any session exists.
+  mode:                  text('mode').notNull().default('standard'),
   createdAt:             integer('created_at').notNull(),
   updatedAt:             integer('updated_at').notNull(),
 }, (t) => ({
   codeIdx: uniqueIndex('rooms_code_idx').on(t.code),
 }))
 
+// Departments are an ORGANISATIONAL container, not a mechanical one (decision
+// D2): they scope a department lead's authority, group the lobby roster, and
+// can bound who may send suggestions. They do not affect turn order, dice, DCs,
+// or scoring. campaignId is written now but unused — it keeps campaign-scoped
+// departments a later feature rather than a destructive migration (D13).
+export const departments = sqliteTable('departments', {
+  id:               text('id').primaryKey(),
+  roomId:           text('room_id').notNull(),
+  campaignId:       text('campaign_id'),
+  name:             text('name').notNull(),
+  leadParticipantId: text('lead_participant_id'),
+  createdAt:        integer('created_at').notNull(),
+}, (t) => ({
+  roomIdx: index('departments_room_idx').on(t.roomId),
+}))
+
 export const participants = sqliteTable('participants', {
   id:          text('id').primaryKey(),
   roomId:      text('room_id').notNull(),
-  role:        text('role').notNull(),          // facilitator | player
+  role:        text('role').notNull(),          // facilitator | dept_lead | player
   displayName: text('display_name').notNull(),
   characterId: text('character_id'),            // the player's character id (= character.id)
   character:   text('character', { mode: 'json' }),  // snapshot of the player's persisted character at join time
@@ -132,6 +154,17 @@ export const participants = sqliteTable('participants', {
   tokenHash:   text('token_hash').notNull(),    // sha-256 of the bearer token
   lastSeenAt:  integer('last_seen_at').notNull(),
   createdAt:   integer('created_at').notNull(),
+  // ── Departmental mode ────────────────────────────────────────────────────
+  // The in-game role (a CharacterClass): which of the six seats this person
+  // staffs. Deliberately NOT the `role` column above, which is the ROOM role
+  // (facilitator/dept_lead/player) — a department lead is also an Analyst, so
+  // overloading one column would make those two facts mutually exclusive.
+  gameRole:     text('game_role'),
+  departmentId: text('department_id'),
+  // True when the participant skipped character creation and will act on the
+  // role's baseline template sheet (D5). Gates the XP write-back at /end —
+  // template holders earn no persisted XP.
+  usesTemplate: integer('uses_template', { mode: 'boolean' }).notNull().default(false),
 }, (t) => ({
   tokenIdx: uniqueIndex('participants_token_idx').on(t.tokenHash),
   roomIdx:  index('participants_room_idx').on(t.roomId),

@@ -1,4 +1,5 @@
-import type { RoomMembership, Room, Participant } from '../types/room'
+import type { RoomMembership, Room, Participant, Department, RoomMode } from '../types/room'
+import type { CharacterClass } from '../types/game'
 import type { GameSession } from '../types/game'
 import type { ProviderConfig } from '../types/provider'
 import type { DMResponse } from '../types/dm'
@@ -20,16 +21,27 @@ export const roomApi = {
   // caller's DICE account bearer token — every page that reaches these calls
   // is already behind RequireAuth, so this just threads that identity through
   // to the server, which uses it to own the resulting participant row.
-  create: (name: string, passphrase: string, userToken: string) =>
+  // `mode` is fixed at creation because the join flow branches on it before any
+  // session exists. `departments` seeds a departmental room's list — members
+  // pick from it rather than typing a name, so the roster can't fragment into
+  // near-duplicate departments.
+  create: (name: string, passphrase: string, userToken: string, mode: RoomMode = 'standard', departments: string[] = []) =>
     req<RoomMembership>('/rooms', {
-      method: 'POST', headers: { authorization: `Bearer ${userToken}` }, body: JSON.stringify({ name, passphrase }),
+      method: 'POST', headers: { authorization: `Bearer ${userToken}` },
+      body: JSON.stringify({ name, passphrase, mode, departments }),
     }),
 
-  // Players bring one of their own persisted roster characters (characterId)
-  // rather than generating a throwaway one from a class pick.
-  join: (code: string, userToken: string, characterId: string) =>
+  // Standard rooms: a character is required — XP earned carries back to it.
+  // Departmental rooms: the role is required and the character is optional;
+  // without one the participant acts on the role's baseline template sheet.
+  join: (code: string, userToken: string, body: {
+    characterId?: string
+    gameRole?:    CharacterClass
+    departmentId?: string | null
+    displayName?: string
+  }) =>
     req<RoomMembership>(`/rooms/${encodeURIComponent(code)}/join`, {
-      method: 'POST', headers: { authorization: `Bearer ${userToken}` }, body: JSON.stringify({ characterId }),
+      method: 'POST', headers: { authorization: `Bearer ${userToken}` }, body: JSON.stringify(body),
     }),
 
   claimFacilitator: (code: string, passphrase: string, userToken: string, displayName?: string) =>
@@ -38,7 +50,32 @@ export const roomApi = {
     }),
 
   getLobby: (code: string) =>
-    req<{ room: Room; participants: Participant[] }>(`/rooms/${encodeURIComponent(code)}`),
+    req<{ room: Room; participants: Participant[]; departments: Department[] }>(`/rooms/${encodeURIComponent(code)}`),
+
+  // ── Departments (facilitator only; organisational grouping — decision D2) ──
+  addDepartment: (code: string, token: string, name: string) =>
+    req<{ departments: Department[] }>(`/rooms/${encodeURIComponent(code)}/departments`, {
+      method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ name }),
+    }),
+
+  // Setting leadParticipantId also promotes that person to the dept_lead room
+  // role (and demotes whoever held it), so the pointer and the powers stay in
+  // step. Pass null to clear the lead.
+  updateDepartment: (code: string, token: string, id: string, updates: { name?: string; leadParticipantId?: string | null }) =>
+    req<{ departments: Department[] }>(`/rooms/${encodeURIComponent(code)}/departments/${encodeURIComponent(id)}`, {
+      method: 'PATCH', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(updates),
+    }),
+
+  deleteDepartment: (code: string, token: string, id: string) =>
+    req<{ departments: Department[] }>(`/rooms/${encodeURIComponent(code)}/departments/${encodeURIComponent(id)}`, {
+      method: 'DELETE', headers: { authorization: `Bearer ${token}` },
+    }),
+
+  // Facilitator fixes a seat someone set wrong at join, or rebalances staffing.
+  updateParticipant: (code: string, token: string, id: string, updates: { gameRole?: CharacterClass; departmentId?: string | null }) =>
+    req<{ participants: Participant[] }>(`/rooms/${encodeURIComponent(code)}/participants/${encodeURIComponent(id)}`, {
+      method: 'PATCH', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(updates),
+    }),
 
   // Writes session-earned XP back to each player's own persisted character
   // (facilitator-only; uses the room participant token like /action, /dm).
