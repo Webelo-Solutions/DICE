@@ -2,6 +2,7 @@ import PDFDocument from 'pdfkit'
 import type { SessionRecord } from '../../src/types/history'
 import { extractActionTriples, computePlayerGrades } from '../../src/utils/actionGrading'
 import { formatDuration, formatTimestamp } from '../../src/utils/learningPath'
+import { benchWarnings } from '../../src/utils/departmentalReport'
 
 const ACCENT   = '#0B5FFF'
 const INK      = '#111111'
@@ -94,6 +95,70 @@ export function renderSessionReportPdf(record: SessionRecord, ownerLabel: string
         }
         doc.moveDown(0.8)
       }
+    }
+
+    // ── Departmental participation ─────────────────────────────────────────
+    // Present only for departmental sessions. This is the half of the report a
+    // training manager actually keeps: who contributed, and where the bench is
+    // one person deep.
+    const dept = record.departmental
+    if (dept) {
+      heading('Departmental Participation')
+      kv('Participants:', String(dept.totals.participants))
+      kv('Turns Taken / Forfeited:', `${dept.totals.turnsTaken} / ${dept.totals.turnsForfeited}`)
+      kv('Suggestions Offered / Acted On:', `${dept.totals.suggestionsOffered} / ${dept.totals.suggestionsAdopted}`)
+      doc.moveDown(0.6)
+
+      // Lead with absent capabilities — an unstaffed role is skipped silently
+      // during play, so the report is the only place it surfaces at all.
+      if (dept.unstaffedRoles.length > 0) {
+        ensure(40)
+        doc.font('Helvetica-Bold').fontSize(9.5).fillColor('#B91C1C')
+          .text(`Unstaffed roles: ${dept.unstaffedRoles.join(', ')}`, { width: contentWidth })
+        doc.font('Helvetica').fontSize(8.5).fillColor(DIM)
+          .text('These capabilities were absent from the incident entirely.', { width: contentWidth })
+        doc.moveDown(0.6)
+      }
+
+      const warnings = benchWarnings(dept.bench)
+      if (warnings.length > 0) {
+        heading('Bench Depth Findings')
+        for (const w of warnings) {
+          ensure(24)
+          doc.font('Helvetica').fontSize(9).fillColor(INK).text(`• ${w}`, { width: contentWidth })
+          doc.moveDown(0.25)
+        }
+        doc.moveDown(0.5)
+      }
+
+      heading('Individual Scorecards')
+      doc.font('Helvetica-Oblique').fontSize(8).fillColor(DIM)
+        .text('Drawn = times the rotation reached them; Taken = times they acted on it.', { width: contentWidth })
+      doc.moveDown(0.4)
+      for (const s of dept.scorecards) {
+        ensure(34)
+        const success = s.rolls > 0 ? `${Math.round((s.successes / s.rolls) * 100)}%` : '—'
+        doc.font('Helvetica-Bold').fontSize(9.5).fillColor(INK)
+          .text(`${s.displayName}  `, { continued: true })
+        doc.font('Helvetica').fontSize(8.5).fillColor(DIM)
+          .text(`${s.gameRole ?? 'unassigned'}${s.departmentName ? ` · ${s.departmentName}` : ''}${s.usesTemplate ? ' · standard sheet' : ''}`)
+        doc.font('Helvetica').fontSize(8.5).fillColor(INK).text(
+          `drawn ${s.timesDrawn} · taken ${s.turnsTaken} · rolls ${s.rolls} (${success} success)`
+          + ` · advice ${s.suggestionsOffered} offered, ${s.suggestionsAdopted} acted on`
+          + ` · drops ${s.disconnects}`
+          + (s.usesTemplate ? '' : ` · ${s.xpEarned} XP`)
+          + ` · engagement ${s.engagement}`,
+          { width: contentWidth },
+        )
+        doc.moveDown(0.4)
+      }
+      ensure(30)
+      doc.font('Helvetica-Oblique').fontSize(7.5).fillColor(DIM).text(
+        'This section records named individual participation. Confirm it meets your HR, works-council and '
+        + 'data-protection obligations before circulating it outside the exercise.',
+        { width: contentWidth },
+      )
+      doc.moveDown(0.8)
     }
 
     // ── Learning path ──────────────────────────────────────────────────────

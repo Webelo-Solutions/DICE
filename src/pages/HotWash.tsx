@@ -4,6 +4,7 @@ import { useGameStore } from '../store/gameStore'
 import { generateLearningPath, formatDuration, formatTimestamp } from '../utils/learningPath'
 import { PROVIDER_LABEL } from '../types/provider'
 import { HeadshotAvatar } from '../components/HeadshotAvatar'
+import { DepartmentalReportSection } from '../components/DepartmentalReportSection'
 import {
   extractActionTriples,
   mechanicalGrade,
@@ -89,6 +90,10 @@ export function HotWash() {
   const traitUsage      = summarizeTraitUsage(feed)
   const thisSessionGpa  = computeSessionGpa(feed)
   const priorAverageGpa = recentAverageGpa(sessionHistory, session.id)
+  // The departmental report needs the server-side event ledger, so it is built
+  // once at session end and stored on the history record rather than recomputed
+  // here — this page has no way to reach the ledger itself.
+  const departmentalReport = sessionHistory.find((r) => r.id === session.id)?.departmental ?? null
 
   const handleGenerateAssessment = async () => {
     setAiLoading(true)
@@ -259,6 +264,20 @@ export function HotWash() {
             </tbody>
           </table>
         </section>
+
+        {/* ── DEPARTMENTAL PARTICIPATION ────────────────────────────────────
+            Only present for departmental sessions, where the question is who
+            contributed what rather than how six characters performed. Built at
+            session end from the server-side ledger, so it is absent if that
+            fetch failed or if the report is being viewed mid-session. */}
+        {departmentalReport && (
+          <section>
+            <h3 className="text-sm font-bold tracking-widest text-gray-500 uppercase mb-3">
+              Departmental Participation
+            </h3>
+            <DepartmentalReportSection report={departmentalReport} />
+          </section>
+        )}
 
         {/* ── PERFORMANCE METRICS ───────────────────────────────────────── */}
         <section>

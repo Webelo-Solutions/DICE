@@ -541,6 +541,38 @@ export async function roomRoutes(app: FastifyInstance) {
     return reply.code(201).send({ ok: true, id })
   })
 
+  // ── Per-participant tallies from the event ledger (facilitator only) ──
+  // Returns counts, not conclusions: the client joins these with the session's
+  // seat map and the narrative feed to build the report, because neither side
+  // has all three. Named individual data, per decision D12.
+  app.get<{ Params: { code: string }; Querystring: { sessionId?: string } }>(
+    '/rooms/:code/tallies', async (req, reply) => {
+      const room = requireFacilitatorOf(req as AuthedRequest, reply, req.params.code)
+      if (!room) return
+
+      const events = repository.listParticipantEvents(room.id, req.query.sessionId)
+      const departments = new Map(repository.listDepartments(room.id).map((d) => [d.id, d.name]))
+      const tallies = repository.listParticipants(room.id)
+        .filter((p) => p.role !== 'facilitator')
+        .map((p) => {
+          const mine = events.filter((e) => e.participantId === p.id)
+          const count = (kind: string) => mine.filter((e) => e.kind === kind).length
+          return {
+            participantId:      p.id,
+            displayName:        p.displayName,
+            gameRole:           p.gameRole ?? null,
+            departmentName:     p.departmentId ? departments.get(p.departmentId) ?? null : null,
+            turnsTaken:         count('turn_taken'),
+            turnsForfeited:     count('turn_forfeit'),
+            suggestionsOffered: count('suggestion'),
+            suggestionsAdopted: count('suggestion_adopted'),
+            disconnects:        count('disconnect'),
+          }
+        })
+      return reply.send({ tallies })
+    },
+  )
+
   // ── Facilitator reports a forfeited turn ──
   // A forfeit is a clock event in the facilitator's browser; the server cannot
   // observe it, and it leaves no trace in the narrative feed. Without this the
@@ -690,7 +722,25 @@ export async function roomRoutes(app: FastifyInstance) {
         mode: room.mode,
       }))
 
-      socket.on('close', () => { unsubscribe(room.id, socket); broadcastLobby(room.id) })
+      socket.on('close', () => {
+        unsubscribe(room.id, socket)
+        // Record the drop only once the participant has NO sockets left — a
+        // person with two tabs open closing one has not gone anywhere, and
+        // counting that against them in the report would be simply wrong.
+        // Only during live play: lobby churn is not a participation signal.
+        if (room.mode === 'departmental' && !connectedParticipantIds(room.id).has(participant.id)) {
+          const rs = repository.getRoomSession(room.id)
+          const live = rs?.session as { id?: string; round?: number; status?: string } | null
+          if (live?.status === 'active') {
+            repository.recordParticipantEvent({
+              id: randomUUID(), roomId: room.id, sessionId: live.id ?? null,
+              participantId: participant.id, kind: 'disconnect',
+              round: live.round ?? null, at: Date.now(), payload: null,
+            })
+          }
+        }
+        broadcastLobby(room.id)
+      })
     },
   )
 }

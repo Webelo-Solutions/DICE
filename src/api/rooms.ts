@@ -1,5 +1,6 @@
 import type { RoomMembership, Room, Participant, Department, RoomMode } from '../types/room'
 import type { CharacterClass } from '../types/game'
+import type { ParticipantTally } from '../types/report'
 import type { GameSession } from '../types/game'
 import type { ProviderConfig } from '../types/provider'
 import type { DMResponse } from '../types/dm'
@@ -91,6 +92,14 @@ export const roomApi = {
     req<{ ok: boolean }>(`/rooms/${encodeURIComponent(code)}/action`, {
       method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ text, adoptedFrom }),
     }),
+
+  // Facilitator-only: per-participant counts from the server-side event ledger,
+  // for the departmental after-action report.
+  getTallies: (code: string, token: string, sessionId: string) =>
+    req<{ tallies: ParticipantTally[] }>(
+      `/rooms/${encodeURIComponent(code)}/tallies?sessionId=${encodeURIComponent(sessionId)}`,
+      { headers: { authorization: `Bearer ${token}` } },
+    ),
 
   // Facilitator-only: record that a drawn actor let their turn lapse. The
   // server cannot see the round timer, and a forfeit leaves no trace in the
