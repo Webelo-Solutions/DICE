@@ -23,6 +23,11 @@ function engagementBand(turnsTaken: number, offered: number, timesDrawn: number)
   // they happened to be handed.
   if (timesDrawn > 0 && turnsTaken / timesDrawn <= 0.5 && offered === 0) return 'low'
   if (contributions >= 4) return 'active'
+  // Took every turn the rotation offered. How often it reached them is a
+  // property of how deep their role's bench is, not of their engagement — in a
+  // short session most people are drawn once or twice, and marking someone low
+  // for answering every time they were called would be plainly unfair.
+  if (timesDrawn > 0 && turnsTaken === timesDrawn) return 'moderate'
   return contributions >= 2 ? 'moderate' : 'low'
 }
 

@@ -19,7 +19,8 @@
     "build:uat": "node scripts/build-uat-checklist.mjs && node scripts/build-uat-checklist-xlsx.mjs",
     "verify:rotation": "tsx scripts/verify-rotation.ts",
     "verify:report": "tsx scripts/verify-report.ts",
-    "verify:departmental": "npm run verify:rotation && npm run verify:report"
+    "verify:departmental": "npm run verify:rotation && npm run verify:report",
+    "verify:live": "tsx scripts/live-departmental-test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
