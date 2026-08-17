@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCampaignStore } from '../store/campaignStore'
 import { useGameStore }     from '../store/gameStore'
+import { useToastStore }    from '../store/toastStore'
 import { ALL_SCENARIOS }    from '../data/scenarios'
 import type { ScenarioPack, ScenarioAct, Inject, Clue, SessionResult } from '../types/game'
 import type { Campaign, CustomScenario } from '../types/campaign'
@@ -739,6 +740,7 @@ export function CampaignBuilder() {
     addCampaign, updateCampaign, deleteCampaign,
     addCustomScenario, updateCustomScenario, deleteCustomScenario,
   } = useCampaignStore()
+  const pushToast = useToastStore((s) => s.push)
 
   const [tab,             setTab]             = useState<Tab>('campaigns')
   const [selectedCampId,  setSelectedCampId]  = useState<string | null>(null)
@@ -764,13 +766,16 @@ export function CampaignBuilder() {
   }
 
   const handleSaveCampaign = (c: Campaign) => {
+    const label = c.name.trim() || 'Unnamed Campaign'
     if (isNewCamp) {
       addCampaign(c)
       setIsNewCamp(false)
       setSelectedCampId(c.id)
       setDraftCampaign(null)
+      pushToast(`Campaign "${label}" created`, 'success')
     } else {
       updateCampaign(c.id, c)
+      pushToast(`Changes to "${label}" saved`, 'success')
     }
   }
 
@@ -812,13 +817,16 @@ export function CampaignBuilder() {
   }
 
   const handleSaveScenario = (s: CustomScenario) => {
+    const label = s.title.trim() || s.id
     if (isNewSc) {
       addCustomScenario(s)
       setIsNewSc(false)
       setSelectedScId(s.id)
       setDraftScenario(null)
+      pushToast(`Scenario "${label}" created`, 'success')
     } else {
       updateCustomScenario(s.id, s)
+      pushToast(`Changes to "${label}" saved`, 'success')
     }
   }
 
