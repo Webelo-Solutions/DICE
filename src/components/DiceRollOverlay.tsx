@@ -10,6 +10,10 @@ interface Props {
   lastRoll:       RollRecord | null
   onRollComplete: (raw: number) => void
   onDismiss:      () => void
+  // When set, the roll replays this already-known result (e.g. a room player
+  // watching a roll the facilitator already resolved) instead of generating
+  // a new random one.
+  knownResult?:   number
 }
 
 const D20_FACES = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]
@@ -32,7 +36,7 @@ function accentFor(raw: number | null, animating: boolean): string {
   return COLOR_DIM
 }
 
-export function DiceRollOverlay({ player, action, lastRoll, onRollComplete, onDismiss }: Props) {
+export function DiceRollOverlay({ player, action, lastRoll, onRollComplete, onDismiss, knownResult }: Props) {
   const [isAnimating,   setIsAnimating]   = useState(false)
   const [displayNumber, setDisplayNumber] = useState<number | null>(null)
   const [rawResult,     setRawResult]     = useState<number | null>(null)
@@ -56,7 +60,7 @@ export function DiceRollOverlay({ player, action, lastRoll, onRollComplete, onDi
   const triggerRoll = useCallback(() => {
     if (isAnimRef.current || hasRolled.current) return
     hasRolled.current = true
-    const result = rollD20()
+    const result = knownResult ?? rollD20()
     setAnim(true)
 
     // 3D tumble: multi-axis rotation decelerating to near-stop over 1.6s.

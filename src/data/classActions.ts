@@ -13,6 +13,14 @@ export interface ClassAction {
   description: string
   stat:        StatKey
   subActions:  SubAction[]
+  // Secondary actions borrowed from another class's primary kit, unlocked once
+  // the character reaches this level. Omitted/undefined = available from
+  // level 1, same as every action before this field existed.
+  minLevel?:   number
+  // Which class this was borrowed from — surfaced in the UI so a player can
+  // see it's a cross-trained capability, not a native one. Only set on
+  // cross-class unlocks (paired with minLevel).
+  sourceClass?: CharacterClass
 }
 
 export interface ClassActionSet {
@@ -83,6 +91,17 @@ export const CLASS_ACTIONS: Record<CharacterClass, ClassActionSet> = {
     secondary: [
       { id: 'document_findings', label: 'Document Findings', description: 'Record observations and timeline entries for the incident record', stat: 'analysis', subActions: [] },
       { id: 'escalate_to_lead',  label: 'Escalate to Lead',  description: 'Hand off the alert to a senior analyst or team lead',           stat: 'command',   subActions: [] },
+      {
+        id: 'threat_hunt', label: 'Threat Hunt',
+        description: 'Proactively search the environment for hidden adversary activity',
+        stat: 'analysis', minLevel: 2, sourceClass: 'Hunter',
+        subActions: [
+          { id: 'th_proc',   label: 'Hunt process anomalies',    dcHint: 12, detail: 'Search for abnormal parent-child process relationships — e.g., Office spawning PowerShell, or cmd.exe launched from a web server process.' },
+          { id: 'th_lolbin', label: 'Hunt LOLBIN abuse',         dcHint: 14, detail: 'Look for legitimate binaries being weaponized: certutil downloading files, mshta executing remote scripts, or wscript running unusual payloads.' },
+          { id: 'th_beacon', label: 'Hunt for beaconing',        dcHint: 16, detail: 'Analyze JA3 fingerprints and outbound connection intervals in network flows for periodic beaconing patterns consistent with C2.' },
+          { id: 'th_cred',   label: 'Hunt credential dumping',   dcHint: 14, detail: 'Search EDR telemetry for LSASS memory access patterns or known credential dumping tool signatures across all managed endpoints.' },
+        ],
+      },
     ],
   },
 
@@ -147,6 +166,17 @@ export const CLASS_ACTIONS: Record<CharacterClass, ClassActionSet> = {
     secondary: [
       { id: 'review_logs',  label: 'Review Logs',  description: 'Check log sources for events relevant to an active hunt', stat: 'vigilance', subActions: [] },
       { id: 'submit_intel', label: 'Submit Intel', description: 'Share hunt findings with the broader team',              stat: 'command',   subActions: [] },
+      {
+        id: 'contain_threat', label: 'Contain Threat',
+        description: 'Apply an immediate containment measure to stop spread',
+        stat: 'agility', minLevel: 2, sourceClass: 'Responder',
+        subActions: [
+          { id: 'ct_kill',    label: 'Kill malicious process',     dcHint: 10, detail: 'Use EDR remote execution to terminate the identified malicious process across all affected endpoints simultaneously.' },
+          { id: 'ct_account', label: 'Disable compromised account', dcHint: 10, detail: 'Disable the account in Active Directory, force a token invalidation, and revoke all active sessions.' },
+          { id: 'ct_sinkhole',label: 'DNS sinkhole C2 domain',     dcHint: 10, detail: 'Push the identified C2 domain to the internal DNS sinkhole to redirect all callback attempts to a controlled IP.' },
+          { id: 'ct_session', label: 'Revoke active sessions',     dcHint: 12, detail: 'Force termination of all active sessions belonging to the compromised account across all systems and cloud services.' },
+        ],
+      },
     ],
   },
 
@@ -211,6 +241,17 @@ export const CLASS_ACTIONS: Record<CharacterClass, ClassActionSet> = {
     secondary: [
       { id: 'coordinate_containment', label: 'Coordinate Containment', description: 'Align the containment plan with the broader team',         stat: 'command',  subActions: [] },
       { id: 'document_incident',      label: 'Document Incident',      description: 'Record the incident timeline and containment actions taken', stat: 'analysis', subActions: [] },
+      {
+        id: 'analyze_logs', label: 'Analyze Logs',
+        description: 'Review log data for anomalies and suspicious patterns',
+        stat: 'vigilance', minLevel: 2, sourceClass: 'Analyst',
+        subActions: [
+          { id: 'al_raw',      label: 'Pull raw events',        dcHint: 8,  detail: 'Query {{SIEM}} for the last 4 hours of events from the affected host — authentication, process, and network activity.' },
+          { id: 'al_cross',    label: 'Cross-correlate sources', dcHint: 12, detail: 'Join endpoint logs with network flow data to reconstruct the sequence of events that preceded the alert.' },
+          { id: 'al_gaps',     label: 'Check for log gaps',      dcHint: 14, detail: 'Inspect ingestion timestamps for gaps that may indicate log deletion, forwarding failure, or attacker tampering.' },
+          { id: 'al_timeline', label: 'Build event timeline',    dcHint: 16, detail: 'Reconstruct a minute-by-minute sequence across SIEM, EDR, and DNS logs to establish a definitive attack timeline.' },
+        ],
+      },
     ],
   },
 
@@ -275,6 +316,17 @@ export const CLASS_ACTIONS: Record<CharacterClass, ClassActionSet> = {
     secondary: [
       { id: 'analyze_logs',    label: 'Analyze Logs',    description: 'Review logs for technical indicators relevant to an engineering task', stat: 'vigilance', subActions: [] },
       { id: 'monitor_network', label: 'Monitor Network', description: 'Watch traffic patterns and sensor data for anomalies',                stat: 'vigilance', subActions: [] },
+      {
+        id: 'coordinate_team', label: 'Coordinate Team',
+        description: 'Direct the overall response effort and align team priorities',
+        stat: 'command', minLevel: 2, sourceClass: 'Commander',
+        subActions: [
+          { id: 'ct_sync',     label: '5-min status sync',        dcHint: 10, detail: 'Pull each functional lead for a rapid heads-up: what are you doing, what\'s blocked, what do you need from me right now?' },
+          { id: 'ct_swimlane', label: 'Assign swim lanes',         dcHint: 12, detail: 'Explicitly divide the response effort into named ownership areas, confirm each lead accepts, and broadcast the division.' },
+          { id: 'ct_conflict', label: 'Resolve resource conflict', dcHint: 14, detail: 'Arbitrate between team members competing for the same tooling, access, or attention — make the call and unblock the critical path.' },
+          { id: 'ct_priority', label: 'Set priority order',        dcHint: 10, detail: 'Define the top three actions for the next 30 minutes and communicate the priority order clearly to all tracks.' },
+        ],
+      },
     ],
   },
 
@@ -339,6 +391,17 @@ export const CLASS_ACTIONS: Record<CharacterClass, ClassActionSet> = {
     secondary: [
       { id: 'correlate_iocs', label: 'Correlate IOCs', description: 'Cross-reference indicators against threat intel feeds',  stat: 'analysis', subActions: [] },
       { id: 'brief_team',     label: 'Brief Team',     description: 'Share threat actor context and situational awareness',   stat: 'command',  subActions: [] },
+      {
+        id: 'query_siem', label: 'Query SIEM',
+        description: 'Run a targeted search across the SIEM data lake',
+        stat: 'vigilance', minLevel: 2, sourceClass: 'Analyst',
+        subActions: [
+          { id: 'qs_keyword', label: 'Keyword search',         dcHint: 8,  detail: 'Run a targeted keyword search for the identified domain, hash, or username across all indexed log sources.' },
+          { id: 'qs_hunt',    label: 'Write hunt query',       dcHint: 14, detail: 'Author a structured hunt query in {{SIEM}} to surface a specific behavioral pattern across the full data lake.' },
+          { id: 'qs_coverage',label: 'Verify log coverage',    dcHint: 10, detail: 'Confirm which sources are actively forwarding to the SIEM and identify any coverage gaps in the affected environment.' },
+          { id: 'qs_session', label: 'Reconstruct user session',dcHint: 12, detail: 'Pull all events attributed to the suspect account across the relevant time window and reconstruct their session.' },
+        ],
+      },
     ],
   },
 
@@ -403,6 +466,17 @@ export const CLASS_ACTIONS: Record<CharacterClass, ClassActionSet> = {
     secondary: [
       { id: 'track_progress',     label: 'Track Progress',      description: 'Monitor team status, blockers, and response timeline',     stat: 'vigilance', subActions: [] },
       { id: 'communicate_status', label: 'Communicate Status',  description: 'Push a status update to stakeholders or a war-room channel', stat: 'command',   subActions: [] },
+      {
+        id: 'isolate_host', label: 'Isolate Host',
+        description: 'Cut off a compromised endpoint from the network',
+        stat: 'agility', minLevel: 2, sourceClass: 'Responder',
+        subActions: [
+          { id: 'ih_edr',   label: 'EDR remote containment', dcHint: 8,  detail: 'Push network isolation command via CrowdStrike or Defender for Endpoint to cut the host from the network while preserving EDR telemetry.' },
+          { id: 'ih_vlan',  label: 'VLAN isolation',          dcHint: 12, detail: 'Coordinate with network engineering to move the affected host to a quarantine VLAN or disable the switchport.' },
+          { id: 'ih_vpn',   label: 'VPN disconnect and block', dcHint: 10, detail: 'Terminate the affected user\'s VPN session and block their credential from re-authenticating to the VPN gateway.' },
+          { id: 'ih_gpo',   label: 'Disable via GPO',          dcHint: 14, detail: 'Push a targeted Group Policy update to disable the network adapter on the affected host class across the environment.' },
+        ],
+      },
     ],
   },
 

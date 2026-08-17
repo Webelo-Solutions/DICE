@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGameStore } from '../store/gameStore'
+import { useCampaignStore } from '../store/campaignStore'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   detectLevelUps,
@@ -9,17 +10,22 @@ import {
 import type { LevelUpEvent, LevelUpChoice } from '../utils/leveling'
 import { generateLearningPath } from '../utils/learningPath'
 import { LevelUpModal } from '../components/LevelUpModal'
+import { launchCampaignScenario } from '../utils/campaignPlay'
+import { ALL_SCENARIOS } from '../data/scenarios'
+import type { Campaign } from '../types/campaign'
 
 // ─── Main SessionEnd page ─────────────────────────────────────────────────────
 
 export function SessionEnd() {
   const navigate = useNavigate()
   const { result, session, roster, resetAll, levelUpCharacter } = useGameStore()
+  const customScenarios = useCampaignStore((s) => s.customScenarios)
 
   const xpApplied = useRef(false)
   const [levelUpQueue, setLevelUpQueue]   = useState<LevelUpEvent[]>([])
   const [queueIndex, setQueueIndex]       = useState(0)
   const [levelingDone, setLevelingDone]   = useState(false)
+  const [campaignProgress, setCampaignProgress] = useState<{ campaign: Campaign; done: boolean } | null>(null)
 
   // Apply XP once on mount, detect level-ups, and record session history
   useEffect(() => {
@@ -48,6 +54,21 @@ export function SessionEnd() {
 
     applySessionToOrg(session, result)
 
+    const { activeCampaignContext, setActiveCampaignContext } = useGameStore.getState()
+    if (activeCampaignContext) {
+      useCampaignStore.getState().completeCampaignScenario(
+        activeCampaignContext.campaignId,
+        activeCampaignContext.scenarioIndex,
+        session.scenario.id,
+        result.outcome,
+      )
+      setActiveCampaignContext(null)
+      const updated = useCampaignStore.getState().campaigns.find((c) => c.id === activeCampaignContext.campaignId)
+      if (updated) {
+        setCampaignProgress({ campaign: updated, done: updated.currentScenarioIndex >= updated.scenarioSequence.length })
+      }
+    }
+
     if (events.length > 0) {
       setLevelUpQueue(events)
     } else {
@@ -64,6 +85,16 @@ export function SessionEnd() {
   const color        = isVictory ? 'text-terminal-green'    : 'text-terminal-red'
   const borderColor  = isVictory ? 'border-terminal-green/30' : 'border-terminal-red/30'
   const bgColor      = isVictory ? 'bg-terminal-green/5'    : 'bg-terminal-red/5'
+
+  const nextCampaignScenario = campaignProgress && !campaignProgress.done
+    ? [...ALL_SCENARIOS, ...customScenarios]
+        .find((s) => s.id === campaignProgress.campaign.scenarioSequence[campaignProgress.campaign.currentScenarioIndex])
+    : null
+
+  const handleContinueCampaign = () => {
+    if (!campaignProgress) return
+    if (launchCampaignScenario(campaignProgress.campaign, customScenarios)) navigate('/roster')
+  }
 
   const handleLevelUpChoice = (choice: LevelUpChoice) => {
     const event = levelUpQueue[queueIndex]
@@ -138,6 +169,32 @@ export function SessionEnd() {
               })}
             </div>
           </div>
+
+          {/* Campaign progress */}
+          {campaignProgress && !campaignProgress.done && nextCampaignScenario && (
+            <div className="mb-5 rounded border border-terminal-green/40 bg-terminal-green/5 px-4 py-3 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-terminal-green tracking-widest uppercase truncate">
+                  {campaignProgress.campaign.name}
+                </div>
+                <div className="text-xs text-terminal-dim mt-0.5 truncate">
+                  Next: {nextCampaignScenario.title} · Scenario {campaignProgress.campaign.currentScenarioIndex + 1} of {campaignProgress.campaign.scenarioSequence.length}
+                </div>
+              </div>
+              <button
+                onClick={handleContinueCampaign}
+                className="flex-shrink-0 px-4 py-2 rounded border border-terminal-green bg-terminal-green/10
+                  text-terminal-green text-xs font-bold tracking-widest uppercase hover:bg-terminal-green/20 transition-colors">
+                ▶ Continue Campaign
+              </button>
+            </div>
+          )}
+          {campaignProgress?.done && (
+            <div className="mb-5 rounded border border-terminal-blue/40 bg-terminal-blue/5 px-4 py-3
+              text-xs text-terminal-blue font-semibold tracking-widest uppercase">
+              ✓ {campaignProgress.campaign.name} — Campaign Complete
+            </div>
+          )}
 
           {/* Level-up call to action */}
           {levelUpQueue.length > 0 && !levelingDone && (

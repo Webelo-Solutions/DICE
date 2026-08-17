@@ -25,6 +25,7 @@ export interface Participant {
   character:   Character | null   // each player IS their character (Option B)
   lastSeenAt:  number
   createdAt:   number
+  connected:   boolean   // has at least one open WebSocket in this room right now
 }
 
 // Returned to a client when it creates or joins a room. The raw token is shown

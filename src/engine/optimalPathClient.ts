@@ -4,6 +4,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import type { GameSession } from '../types/game'
 import type { ActionTriple } from '../utils/actionGrading'
 import type { ProviderConfig } from '../types/provider'
+import { parseLLMJson } from './llmJson'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -114,20 +115,20 @@ export async function callOptimalPath(
       const client = new Anthropic({ apiKey: config.apiKey, dangerouslyAllowBrowser: true })
       const message = await client.messages.create({
         model:      config.model,
-        max_tokens: 8192,
+        max_tokens: 16000,
         messages:   [{ role: 'user', content: prompt }],
       })
       if (message.stop_reason === 'max_tokens') {
-        throw new Error('Optimal path response was too long to complete — try a longer-context model.')
+        throw new Error('Optimal path response was too long to complete — try ending the session with fewer total actions or acts, or reduce the number of players.')
       }
-      raw = message.content[0].type === 'text' ? message.content[0].text : ''
+      raw = message.content.map((block) => block.type === 'text' ? block.text : '').join('')
       break
     }
     case 'openai': {
       const client = new OpenAI({ apiKey: config.apiKey, dangerouslyAllowBrowser: true })
       const res = await client.chat.completions.create({
         model:           config.model,
-        max_tokens:      8192,
+        max_tokens:      16000,
         response_format: { type: 'json_object' },
         messages:        [{ role: 'user', content: prompt }],
       })
@@ -143,7 +144,7 @@ export async function callOptimalPath(
       })
       const res = await client.chat.completions.create({
         model:           config.azureDeployment ?? config.model,
-        max_tokens:      8192,
+        max_tokens:      16000,
         response_format: { type: 'json_object' },
         messages:        [{ role: 'user', content: prompt }],
       })
@@ -156,7 +157,7 @@ export async function callOptimalPath(
         model: config.model,
         generationConfig: {
           responseMimeType: 'application/json',
-          maxOutputTokens:  8192,
+          maxOutputTokens:  16000,
         },
       })
       const result = await model.generateContent(prompt)
@@ -165,11 +166,5 @@ export async function callOptimalPath(
     }
   }
 
-  const json = raw.replace(/^```(?:json)?\s*/m, '').replace(/\s*```$/m, '').trim()
-
-  try {
-    return JSON.parse(json) as OptimalPathResult
-  } catch {
-    throw new Error(`Optimal path response could not be parsed. Raw: ${json.slice(0, 300)}`)
-  }
+  return parseLLMJson<OptimalPathResult>(raw, 'optimal path response')
 }

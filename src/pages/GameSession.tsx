@@ -13,7 +13,7 @@ import { InitiativeTracker } from '../components/InitiativeTracker'
 import { ActionMenu } from '../components/ActionMenu'
 import { callDM, callDMHint } from '../engine/dmClient'
 import { callAdversaryOptions, callAdversaryNarrate, getEvasionModifier } from '../engine/adversaryClient'
-import { computeModifier, adjudicateRoll, outcomeTierColor, outcomeTierLabel } from '../engine/dice'
+import { computeModifier, adjudicateRoll, outcomeTierColor, outcomeTierLabel, rollD20 } from '../engine/dice'
 import type { RollContext } from '../engine/dice'
 import type { RollRecord, OutcomeTier, StatKey } from '../types/game'
 import { TIMER_DIFFICULTY_SECONDS } from '../types/game'
@@ -38,7 +38,7 @@ export function GameSession() {
   const {
     session, feed, isDMThinking, providerConfig,
     appendFeed, applyDMResponse, applyAdversaryRoll, markRoundTimerExpired, advanceTurn, endSession,
-    updateSessionPlayer,
+    updateSessionPlayer, markTraitUsed,
   } = store
 
   const { speakChunk, flushChunks, speak: speakDM, cancel: cancelSpeech } = useVoiceDM()
@@ -53,6 +53,18 @@ export function GameSession() {
   // Pauses the round timer while the player has focus in the action textarea.
   const [isTyping,        setIsTyping]        = useState(false)
   const [dcPenalty,       setDcPenalty]       = useState(0)   // accumulated from Analyst hints
+  // Momentum: consecutive Success/Critical Hit count per player, reset on
+  // anything less. Rally: +2 declared by a teammate for the CURRENT turn
+  // player's next roll only, consumed the instant that roll resolves.
+  const [momentumStreak,  setMomentumStreak]  = useState<Record<string, number>>({})
+  const [rallyBonus,      setRallyBonus]      = useState(0)
+  // Composure / Second Wind: pauses the turn right after a qualifying roll
+  // (Critical Fail / Failure) so the player can choose whether to spend the
+  // trait before the DM narrates the consequences.
+  const [pendingTraitDecision, setPendingTraitDecision] = useState<{
+    roll:  RollRecord
+    trait: 'Composure' | 'Second Wind'
+  } | null>(null)
   const [hintStreaming,     setHintStreaming]     = useState('')
   const [isHinting,         setIsHinting]         = useState(false)
   const [statOverride,      setStatOverride]      = useState<StatKey | null>(null)
@@ -236,12 +248,12 @@ export function GameSession() {
         timestamp: Date.now(),
       })
 
-      if (response.inject) {
+      if (response.inject?.description) {
         appendFeed({
           id:        uid(),
           type:      'inject',
           speaker:   '! INJECT',
-          text:      response.inject.description + '\n' + response.inject.mechanicalEffect,
+          text:      [response.inject.description, response.inject.mechanicalEffect].filter(Boolean).join('\n'),
           timestamp: Date.now(),
         })
       }
@@ -313,14 +325,41 @@ export function GameSession() {
     setWaitingForRoll(true)
   }
 
+  // Shared tail of roll resolution — used both when no trait decision is
+  // needed and after Composure/Second Wind resolve (or are declined).
+  const finalizeRoll = (roll: RollRecord) => {
+    setLastRoll(roll)
+    // Momentum bookkeeping lives here so it only fires once per roll,
+    // regardless of whether a trait decision paused the flow in between.
+    const extendsMomentum = roll.outcome === 'success' || roll.outcome === 'critical_hit'
+    setMomentumStreak((prev) => ({
+      ...prev,
+      [roll.player]: extendsMomentum ? (prev[roll.player] ?? 0) + 1 : 0,
+    }))
+    if (roll.outcome === 'critical_hit' || roll.outcome === 'critical_fail') {
+      useGameStore.getState().resolveCriticalInject(roll.outcome)
+    }
+    useGameStore.setState((s) => ({
+      session: s.session ? { ...s.session, lastRoll: roll } : null,
+      isDMThinking: true,
+    }))
+    runDM(pendingAction, 'turn')
+  }
+
   // Step 2: player clicks die — animation runs in DiceRoller, result fires here
   const handleDiceRollComplete = (raw: number) => {
     if (!session || !currentPlayer) return
 
     const dc      = (dcHint ?? 12) + dcPenalty
-    const rollCtx: RollContext = { round: session.round, timerExpired: session.roundTimerExpired }
-    const modifier = computeModifier(currentPlayer, pendingAction, dc, statOverride ?? undefined, rollCtx)
+    const rollCtx: RollContext = {
+      round:                session.round,
+      timerExpired:         session.roundTimerExpired,
+      consecutiveSuccesses: momentumStreak[currentPlayer.id] ?? 0,
+    }
+    const { modifier: baseModifier, traitsApplied } = computeModifier(currentPlayer, pendingAction, dc, statOverride ?? undefined, rollCtx)
+    const modifier = baseModifier + rallyBonus
     setDcPenalty(0)      // reset after roll consumes the penalty
+    setRallyBonus(0)     // reset after roll consumes the buff
     setStatOverride(null)
     const outcome  = adjudicateRoll(raw, modifier, dc)
 
@@ -331,9 +370,9 @@ export function GameSession() {
       total:    raw + modifier,
       dc,
       outcome,
+      traitsApplied: traitsApplied.length > 0 ? traitsApplied : undefined,
     }
 
-    setLastRoll(roll)
     setWaitingForRoll(false)
 
     appendFeed({
@@ -354,16 +393,65 @@ export function GameSession() {
       )
     }
 
-    if (outcome === 'critical_hit' || outcome === 'critical_fail') {
-      useGameStore.getState().resolveCriticalInject(outcome)
+    const usedByPlayer = session.usedOnceTraits?.[currentPlayer.id] ?? []
+    const canUseComposure  = outcome === 'critical_fail' && currentPlayer.traits.includes('Composure')  && !usedByPlayer.includes('Composure')
+    const canUseSecondWind = outcome === 'failure'       && currentPlayer.traits.includes('Second Wind') && !usedByPlayer.includes('Second Wind')
+
+    if (canUseComposure)       { setPendingTraitDecision({ roll, trait: 'Composure'  }); return }
+    if (canUseSecondWind)      { setPendingTraitDecision({ roll, trait: 'Second Wind' }); return }
+
+    finalizeRoll(roll)
+  }
+
+  // Player's choice on the Composure / Second Wind prompt raised above.
+  const resolveTraitDecision = (useTrait: boolean) => {
+    if (!pendingTraitDecision || !currentPlayer) return
+    const { roll, trait } = pendingTraitDecision
+    setPendingTraitDecision(null)
+
+    if (!useTrait) { finalizeRoll(roll); return }
+
+    markTraitUsed(currentPlayer.id, trait)
+
+    if (trait === 'Composure') {
+      const downgraded: RollRecord = { ...roll, outcome: 'failure' }
+      appendFeed({
+        id: uid(), type: 'system', speaker: 'COMPOSURE', timestamp: Date.now(),
+        text: `${currentPlayer.name} uses Composure — the Critical Fail is downgraded to a Failure.`,
+        player: currentPlayer.id,
+      })
+      finalizeRoll(downgraded)
+      return
     }
 
-    useGameStore.setState((s) => ({
-      session: s.session ? { ...s.session, lastRoll: roll } : null,
-      isDMThinking: true,
-    }))
+    // Second Wind: reroll and keep the better of the two totals.
+    const secondRaw    = rollD20()
+    const secondTotal   = secondRaw + roll.modifier
+    const secondOutcome = adjudicateRoll(secondRaw, roll.modifier, roll.dc)
+    const kept = secondTotal > roll.total
+      ? { ...roll, raw: secondRaw, total: secondTotal, outcome: secondOutcome }
+      : roll
+    appendFeed({
+      id: uid(), type: 'system', speaker: 'SECOND WIND', timestamp: Date.now(),
+      text: `${currentPlayer.name} uses Second Wind — reroll ${secondTotal} vs DC ${roll.dc} `
+        + `(kept the ${kept === roll ? 'original' : 'reroll'}).`,
+      player: currentPlayer.id,
+    })
+    finalizeRoll(kept)
+  }
 
-    runDM(pendingAction, 'turn')
+  // Rally: any OTHER player with an unused Rally can buff the current turn
+  // player's upcoming roll — a free action declared before that roll happens.
+  const handleRallyClick = (fromPlayerId: string) => {
+    if (!currentPlayer) return
+    const fromPlayer = session?.players.find((p) => p.id === fromPlayerId)
+    markTraitUsed(fromPlayerId, 'Rally')
+    setRallyBonus(2)
+    appendFeed({
+      id: uid(), type: 'system', speaker: 'RALLY', timestamp: Date.now(),
+      text: `${fromPlayer?.name ?? 'A teammate'} rallies the team — +2 to ${currentPlayer.name}'s next roll.`,
+      player: fromPlayerId,
+    })
   }
 
   // ── Room mode (facilitator): auto-process a relayed player action ─────────
@@ -927,7 +1015,63 @@ export function GameSession() {
               </div>
             )}
 
-            {roomRole === 'facilitator' ? (
+            {/* Rally — any other player with an unused Rally can buff the
+                current turn player's upcoming roll, declared before they roll. */}
+            {currentPlayer && !isDMThinking && !pendingTraitDecision && (
+              (() => {
+                const eligible = session.players.filter((p) =>
+                  p.id !== currentPlayer.id &&
+                  p.traits.includes('Rally') &&
+                  !(session.usedOnceTraits?.[p.id] ?? []).includes('Rally')
+                )
+                if (eligible.length === 0) return null
+                return (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {rallyBonus > 0 && (
+                      <span className="text-[10px] text-terminal-green font-mono">+{rallyBonus} rallied</span>
+                    )}
+                    {eligible.map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => handleRallyClick(p.id)}
+                        title={`Rally as ${p.name} — grant ${currentPlayer.name} +2 on their next roll`}
+                        className="px-2 py-1 text-[10px] font-mono rounded border border-terminal-green/40
+                          bg-terminal-green/5 text-terminal-green hover:bg-terminal-green/15
+                          hover:border-terminal-green/70 transition-all duration-150"
+                      >
+                        ⚡ Rally (as {p.name})
+                      </button>
+                    ))}
+                  </div>
+                )
+              })()
+            )}
+
+            {pendingTraitDecision && currentPlayer ? (
+              <div className="rounded border border-terminal-amber/40 bg-terminal-amber/5 p-3 space-y-2">
+                <div className="text-xs font-mono text-terminal-amber">
+                  {pendingTraitDecision.trait === 'Composure'
+                    ? `Critical Fail. Use Composure to downgrade it to a Failure?`
+                    : `Failure. Use Second Wind to reroll and keep the better result?`}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => resolveTraitDecision(true)}
+                    className="px-3 py-1.5 text-xs font-mono font-semibold rounded border border-terminal-amber
+                      bg-terminal-amber/15 text-terminal-amber hover:bg-terminal-amber/25 transition-all duration-150"
+                  >
+                    Use {pendingTraitDecision.trait}
+                  </button>
+                  <button
+                    onClick={() => resolveTraitDecision(false)}
+                    className="px-3 py-1.5 text-xs font-mono rounded border border-terminal-border
+                      text-terminal-dim hover:text-gray-300 hover:border-terminal-dim transition-all duration-150"
+                  >
+                    Continue without
+                  </button>
+                </div>
+              </div>
+            ) : roomRole === 'facilitator' ? (
               /* In a room the facilitator runs the DM only — players declare
                  their own actions from their screens, which auto-process here. */
               <div className="text-xs font-mono text-terminal-dim py-2">
@@ -957,7 +1101,7 @@ export function GameSession() {
 
         {/* Facilitator panel — slides over from the right */}
         {facilitatorOpen && (
-          <FacilitatorPanel onClose={() => setFacilitatorOpen(false)} />
+          <FacilitatorPanel onClose={() => setFacilitatorOpen(false)} waitingForRoll={waitingForRoll} />
         )}
 
         {/* Right sidebar: dice → attacker kill chain → XP scorecard */}

@@ -6,6 +6,7 @@ import { useGameStore } from '../store/gameStore'
 import { connectRoom, disconnectRoom } from '../api/roomSocket'
 import { roomApi } from '../api/rooms'
 import { ProviderSettingsModal } from '../components/ProviderSettingsModal'
+import { ClaimFacilitatorPanel } from '../components/ClaimFacilitatorPanel'
 
 export function Lobby() {
   const navigate = useNavigate()
@@ -19,6 +20,7 @@ export function Lobby() {
   const [addresses, setAddresses] = useState<string[]>([])
   const [selectedAddress, setSelectedAddress] = useState<string | null>(null)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+  const [watchQrDataUrl, setWatchQrDataUrl] = useState<string | null>(null)
 
   // No membership (e.g. direct navigation or after leaving) → back to home.
   useEffect(() => {
@@ -46,6 +48,9 @@ export function Lobby() {
   const joinUrl = selectedAddress && port && membership
     ? `http://${selectedAddress}:${port}/join?code=${membership.code}`
     : null
+  const watchUrl = selectedAddress && port && membership
+    ? `http://${selectedAddress}:${port}/watch/${membership.code}`
+    : null
 
   useEffect(() => {
     if (!joinUrl) { setQrDataUrl(null); return }
@@ -53,6 +58,13 @@ export function Lobby() {
     QRCode.toDataURL(joinUrl, { margin: 1, width: 176 }).then((dataUrl) => { if (!cancelled) setQrDataUrl(dataUrl) })
     return () => { cancelled = true }
   }, [joinUrl])
+
+  useEffect(() => {
+    if (!watchUrl) { setWatchQrDataUrl(null); return }
+    let cancelled = false
+    QRCode.toDataURL(watchUrl, { margin: 1, width: 176 }).then((dataUrl) => { if (!cancelled) setWatchQrDataUrl(dataUrl) })
+    return () => { cancelled = true }
+  }, [watchUrl])
 
   if (!membership) return null
 
@@ -108,6 +120,10 @@ export function Lobby() {
             {participants.length === 0 && <div className="px-4 py-3 text-xs text-terminal-dim italic">Waiting for participants…</div>}
             {participants.map((p) => (
               <div key={p.id} className="flex items-center gap-3 px-4 py-2.5">
+                <span
+                  className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${p.connected ? 'bg-terminal-green' : 'bg-terminal-dim/40'}`}
+                  title={p.connected ? 'Connected' : 'Offline'}
+                />
                 <span className={`text-[9px] px-1.5 py-0.5 rounded border tracking-widest uppercase ${p.role === 'facilitator'
                   ? 'border-terminal-amber/40 bg-terminal-amber/10 text-terminal-amber'
                   : 'border-terminal-blue/40 bg-terminal-blue/10 text-terminal-blue'}`}>
@@ -120,12 +136,28 @@ export function Lobby() {
           </div>
         </div>
 
+        {/* Spectator / audience view — facilitator only, no login required to view */}
+        {isFacilitator && watchQrDataUrl && watchUrl && (
+          <div className="rounded border border-terminal-blue/30 bg-terminal-blue/5 p-5 text-center">
+            <div className="text-[10px] text-terminal-dim tracking-widest uppercase mb-2">
+              Spectator / Audience View — no login required
+            </div>
+            <div className="flex flex-col items-center gap-2">
+              <img src={watchQrDataUrl} alt="Scan to watch" width={110} height={110} className="rounded bg-white p-1.5" />
+              <div className="text-[10px] text-terminal-dim/70">Scan, or open</div>
+              <div className="text-xs text-terminal-blue select-all break-all">{watchUrl}</div>
+            </div>
+          </div>
+        )}
+
         {/* Phase note + actions */}
         <div className="rounded border border-terminal-border bg-terminal-surface/40 px-4 py-3 text-[11px] text-terminal-dim leading-relaxed">
           {isFacilitator
             ? 'You are the facilitator. Pick a scenario and run the session as usual — every participant sees the incident unfold live.'
             : 'Waiting for the facilitator to start the session. You will join the shared incident automatically.'}
         </div>
+
+        <ClaimFacilitatorPanel />
 
         {isFacilitator && !hasProvider && (
           <button onClick={() => setProviderOpen(true)}

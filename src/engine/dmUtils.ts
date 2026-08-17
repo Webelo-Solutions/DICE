@@ -4,6 +4,7 @@ import { NPC_PROFILES, NPC_STANCE_DC_MOD } from '../types/npc'
 import type { OrgState } from '../types/orgState'
 import type { OrgProfile } from '../types/orgProfile'
 import { isOrgProfileConfigured } from '../types/orgProfile'
+import { parseLLMJson } from './llmJson'
 
 export function buildPayload(
   session: GameSession,
@@ -90,11 +91,11 @@ export function buildPayload(
 }
 
 export function parseDMResponse(raw: string): DMResponse {
-  const cleaned = raw.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim()
-  const parsed  = JSON.parse(cleaned)
+  const parsed = parseLLMJson<Record<string, any>>(raw, 'DM response')
 
   const sc = parsed.stateChanges ?? parsed.state_changes ?? {}
   const mo = parsed.mechanicalOutcome ?? parsed.mechanical_outcome ?? null
+  const inj = parsed.inject ?? null
 
   return {
     narration:         parsed.narration ?? '',
@@ -114,7 +115,12 @@ export function parseDMResponse(raw: string): DMResponse {
       npcUpdates:                sc.npcUpdates                ?? sc.npc_updates                 ?? [],
       sessionOutcome:            sc.sessionOutcome             ?? sc.session_outcome              ?? null,
     },
-    inject:     parsed.inject     ?? null,
+    inject: inj && typeof (inj.description ?? '') === 'string' && (inj.description || inj.mechanicalEffect || inj.mechanical_effect)
+      ? {
+          description:      inj.description      ?? '',
+          mechanicalEffect: inj.mechanicalEffect  ?? inj.mechanical_effect ?? '',
+        }
+      : null,
     nextPrompt: parsed.nextPrompt ?? parsed.next_prompt ?? '',
     dcHint:     parsed.dcHint     ?? parsed.dc_hint     ?? null,
   }

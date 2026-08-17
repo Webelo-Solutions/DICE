@@ -11,6 +11,7 @@ import { repository } from '../db/sqlite-repository'
 import { hashPassphrase, verifyPassphrase, newToken, hashToken, USERNAME_RE, MIN_PW_LEN, MAX_PW_LEN, REGISTRATION_CODE_KEY } from './tokens'
 import { lockedUntil, recordFailure, recordSuccess } from './lockout'
 import type { UserRow } from '../db/repository'
+import { seedSampleCampaignForNewAdmin } from '../db/seed-sample-campaign'
 
 // 30-day rolling sessions. lastSeenAt is bumped on each authenticated request,
 // expiresAt is fixed at issue time.
@@ -125,6 +126,7 @@ export async function authRoutes(app: FastifyInstance) {
       lastLoginAt:  now,
     })
     repository.claimUnownedRowsForUser(id)
+    seedSampleCampaignForNewAdmin(id)
 
     const token = newToken()
     repository.createAuthSession({

@@ -1,4 +1,5 @@
 import type { Character, Skill, SkillName, StatKey, TraitName } from '../types/game'
+import { TRAIT_DEFINITIONS } from '../data/traitDefinitions'
 
 // ─── Level thresholds ─────────────────────────────────────────────────────────
 
@@ -72,15 +73,10 @@ export function availableStatIncreases(character: Character): StatIncreaseChoice
     }))
 }
 
-// All traits not yet held by the character
-const ALL_TRAITS: TraitName[] = [
-  'First Responder',
-  'Eagle Eye',
-  'Calm Under Pressure',
-  'Digital Bloodhound',
-  'Composure',
-  'Rally',
-]
+// All traits not yet held by the character. Derived from traitDefinitions.ts
+// (the single source of truth for trait names) so a new trait added there
+// automatically becomes available on level-up with no second list to update.
+const ALL_TRAITS = Object.keys(TRAIT_DEFINITIONS) as TraitName[]
 
 export function availableNewTraits(character: Character): NewTraitChoice[] {
   return ALL_TRAITS

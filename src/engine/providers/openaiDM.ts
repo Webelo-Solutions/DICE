@@ -21,11 +21,12 @@ export async function openaiCallDM(
 ): Promise<DMResponse> {
   const client  = makeClient(config)
   const payload = buildPayload(session, action, orgState, orgProfile)
-  let rawText   = ''
+  let rawText     = ''
+  let finishReason: string | null = null
 
   const stream = await client.chat.completions.create({
     model:           config.model,
-    max_tokens:      2048,
+    max_tokens:      8192,
     response_format: { type: 'json_object' },
     stream:          true,
     messages: [
@@ -37,6 +38,11 @@ export async function openaiCallDM(
   for await (const chunk of stream) {
     const delta = chunk.choices[0]?.delta?.content ?? ''
     if (delta) { rawText += delta; onChunk(delta) }
+    if (chunk.choices[0]?.finish_reason) finishReason = chunk.choices[0].finish_reason
+  }
+
+  if (finishReason === 'length') {
+    throw new Error('The DM\'s response was cut off before it finished (ran out of response length). Try a shorter or more specific action description and try again.')
   }
 
   return parseDMResponse(rawText)

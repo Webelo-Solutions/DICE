@@ -1,4 +1,4 @@
-import type { ScenarioPack, GameSession, FeedEntry } from './game'
+import type { ScenarioPack, GameSession, FeedEntry, SessionResult } from './game'
 import type { OrgProfile } from './orgProfile'
 
 // ─── Custom Scenario ──────────────────────────────────────────────────────────
@@ -28,6 +28,16 @@ export interface SaveSlot {
 
 export type CampaignStatus = 'draft' | 'active' | 'completed' | 'abandoned'
 
+// One entry per scenario played to completion within a campaign, keyed by its
+// position in scenarioSequence (not just scenarioId) so a scenario repeated
+// later in the sequence, or replayed, has its own distinct record.
+export interface CampaignScenarioResult {
+  scenarioIndex: number
+  scenarioId:    string
+  outcome:       SessionResult['outcome']
+  completedAt:   number
+}
+
 export interface Campaign {
   id:                     string
   name:                   string
@@ -36,7 +46,7 @@ export interface Campaign {
   characterIds:           string[]   // roster character IDs assigned to this campaign
   status:                 CampaignStatus
   currentScenarioIndex:   number
-  completedScenarioIds:   string[]
+  scenarioResults:        CampaignScenarioResult[]
   notes:                  string
   orgProfile?:            OrgProfile   // tech stack profile; optional so legacy campaigns load
   createdAt:              number

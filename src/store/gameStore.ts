@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Character, GameSession, FeedEntry, ScenarioPack, SessionResult, TimerDifficulty } from '../types/game'
+import type { Character, GameSession, FeedEntry, ScenarioPack, SessionResult, TimerDifficulty, TraitName } from '../types/game'
 import type { DMResponse } from '../types/dm'
 import { applyLevelUp } from '../utils/leveling'
 import { computeXpAwards } from '../utils/xp'
@@ -45,6 +45,9 @@ interface GameStore {
 
   markRoundTimerExpired: () => void
   advanceTurn:      () => void
+  // Records that a player has spent a once-per-session trait (Composure,
+  // Rally, Second Wind) this session, so it can't be used again.
+  markTraitUsed:    (playerId: string, trait: TraitName) => void
 
   endSession:  (result: SessionResult) => void
   levelUpCharacter: (characterId: string, newLevel: number, choice: LevelUpChoice) => void
@@ -80,6 +83,12 @@ interface GameStore {
 
   activeOrgProfile:    OrgProfile | null  // set when a campaign launches; null for ad-hoc scenarios
   setActiveOrgProfile: (profile: OrgProfile | null) => void
+
+  // Set when a campaign launches its current scenario; null for ad-hoc play.
+  // Survives initSession's fresh-session rebuild (mirrors activeOrgProfile) so
+  // SessionEnd can report the outcome back to the right campaign/scenario slot.
+  activeCampaignContext:    { campaignId: string; scenarioIndex: number } | null
+  setActiveCampaignContext: (ctx: { campaignId: string; scenarioIndex: number } | null) => void
 }
 
 function nextPlayerId(order: string[], current: string): string {
@@ -114,6 +123,7 @@ export const useGameStore = create<GameStore>()(
       sessionHistory: [],
       orgState:       INITIAL_ORG_STATE,
       activeOrgProfile: null,
+      activeCampaignContext: null,
 
       addCharacter:    (c) => set((s) => ({ roster: [...s.roster, c] })),
       removeCharacter: (id) => set((s) => ({ roster: s.roster.filter((c) => c.id !== id) })),
@@ -204,6 +214,7 @@ export const useGameStore = create<GameStore>()(
           startedAt:              Date.now(),
           adversary,
           npcs,
+          usedOnceTraits: {},
         }
         set({ session, feed: [], result: null, isDMThinking: true })
       },
@@ -388,11 +399,21 @@ export const useGameStore = create<GameStore>()(
           ? { ...s.adversary, firstActionThisAct: true }
           : s.adversary
 
+        // Trusted Voice: the acting player's rapport-building lands harder —
+        // amplifies trust GAINED from a positive interaction. Scoped to the
+        // current turn player only (whoever's action prompted this update),
+        // not the critical-inject catalog path, which is chance, not roleplay.
+        const actingPlayer = s.players.find((p) => p.id === s.currentTurnPlayerId)
+        const hasTrustedVoice = actingPlayer?.traits.includes('Trusted Voice') ?? false
+
         const newNpcs = sc.npcUpdates.length > 0
           ? s.npcs.map((npc) => {
               const update = sc.npcUpdates.find((u) => u.role === npc.role)
               if (!update) return npc
-              const newTrust = Math.max(0, Math.min(100, npc.trust + update.trustDelta))
+              const trustDelta = hasTrustedVoice && update.trustDelta > 0
+                ? Math.round(update.trustDelta * 1.5)
+                : update.trustDelta
+              const newTrust = Math.max(0, Math.min(100, npc.trust + trustDelta))
               const newStance = update.stance ?? trustToStance(newTrust)
               return {
                 ...npc,
@@ -407,7 +428,7 @@ export const useGameStore = create<GameStore>()(
                       round:      s.round,
                       act:        s.act,
                       summary:    update.summary,
-                      trustDelta: update.trustDelta,
+                      trustDelta,
                     }]
                   : npc.interactions,
                 lastActiveRound: update.summary ? s.round : npc.lastActiveRound,
@@ -432,12 +453,40 @@ export const useGameStore = create<GameStore>()(
           isDMThinking:  false,
           pendingAction: '',
         })
+
+        // Trusted Voice fired if it actually amplified a positive trust
+        // change above — logged after the fact since we only know that for
+        // certain once we've checked every npcUpdate's original delta.
+        if (hasTrustedVoice && actingPlayer && sc.npcUpdates.some((u) => u.trustDelta > 0)) {
+          get().appendFeed({
+            id:        crypto.randomUUID(),
+            type:      'system',
+            speaker:   'TRUSTED VOICE',
+            text:      `${actingPlayer.name} uses Trusted Voice — trust gained from this interaction is amplified.`,
+            timestamp: Date.now(),
+            player:    actingPlayer.id,
+          })
+        }
       },
 
       markRoundTimerExpired: () =>
         set((s) => ({
           session: s.session ? { ...s.session, roundTimerExpired: true } : null,
         })),
+
+      markTraitUsed: (playerId, trait) =>
+        set((s) => {
+          if (!s.session) return {}
+          const used = s.session.usedOnceTraits ?? {}
+          const forPlayer = used[playerId] ?? []
+          if (forPlayer.includes(trait)) return {}
+          return {
+            session: {
+              ...s.session,
+              usedOnceTraits: { ...used, [playerId]: [...forPlayer, trait] },
+            },
+          }
+        }),
 
       // Advance to the next player — does NOT set isDMThinking.
       // The DM only speaks in response to a player action, not on turn advance.
@@ -573,6 +622,7 @@ export const useGameStore = create<GameStore>()(
       resetOrgState: () => set({ orgState: INITIAL_ORG_STATE }),
 
       setActiveOrgProfile: (profile) => set({ activeOrgProfile: profile }),
+      setActiveCampaignContext: (ctx) => set({ activeCampaignContext: ctx }),
 
       resetAll: () => set({
         session:          null,
@@ -581,6 +631,7 @@ export const useGameStore = create<GameStore>()(
         pendingAction:    '',
         isDMThinking:     false,
         activeOrgProfile: null,
+        activeCampaignContext: null,
         // roster and providerConfig are intentionally preserved
       }),
     }),
@@ -600,7 +651,7 @@ export const useGameStore = create<GameStore>()(
           state.providerConfig = {
             provider: 'anthropic',
             apiKey:   legacy['apiKey'] as string,
-            model:    'claude-sonnet-4-6',
+            model:    'claude-sonnet-5',
           }
         }
       },

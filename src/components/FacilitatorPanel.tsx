@@ -3,25 +3,30 @@ import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useGameStore }     from '../store/gameStore'
 import { useCampaignStore } from '../store/campaignStore'
+import { useRoomStore }     from '../store/roomStore'
 import type { SaveSlot }    from '../types/campaign'
 import { postWebhookEvent } from '../engine/webhookClient'
 
-export function FacilitatorPanel({ onClose }: { onClose: () => void }) {
+export function FacilitatorPanel({ onClose, waitingForRoll }: { onClose: () => void; waitingForRoll: boolean }) {
   const navigate = useNavigate()
   const {
     session,
+    isDMThinking,
     facilitatorAdjustClock,
     facilitatorSetAttackerStage,
     facilitatorAddComplication,
     facilitatorRemoveComplication,
     facilitatorNote,
     facilitatorGenerateHotWash,
+    advanceTurn,
     appendFeed,
   } = useGameStore()
 
   const { addSave }       = useCampaignStore()
   const feed              = useGameStore((s) => s.feed)
   const commConfig        = useGameStore((s) => s.commConfig)
+  const roomRole          = useRoomStore((s) => s.membership?.role)
+  const roomParticipants  = useRoomStore((s) => s.participants)
 
   const [noteText,        setNoteText]        = useState('')
   const [complicationIn,  setComplicationIn]  = useState('')
@@ -88,6 +93,15 @@ export function FacilitatorPanel({ onClose }: { onClose: () => void }) {
     if (!trimmed) return
     facilitatorAddComplication(trimmed)
     setComplicationIn('')
+  }
+
+  const currentTurnPlayer = session.players.find((p) => p.id === session.currentTurnPlayerId)
+  const canSkipTurn = !isDMThinking && !waitingForRoll
+
+  const handleSkipTurn = () => {
+    if (!canSkipTurn) return
+    facilitatorNote(`Turn skipped for ${currentTurnPlayer?.name ?? 'the current player'} by the facilitator.`)
+    advanceTurn()
   }
 
   return (
@@ -207,6 +221,37 @@ export function FacilitatorPanel({ onClose }: { onClose: () => void }) {
 
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
+
+          {/* ── Room (multiplayer only) ───────────────────────────── */}
+          {roomRole === 'facilitator' && (
+            <section>
+              <div className="text-[10px] text-terminal-amber tracking-widest uppercase mb-2">
+                Room
+              </div>
+              <div className="space-y-1 mb-3">
+                {roomParticipants.filter((p) => p.role === 'player').map((p) => (
+                  <div key={p.id} className="flex items-center gap-2 px-2 py-1.5 rounded border border-terminal-border bg-terminal-surface text-[11px]">
+                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${p.connected ? 'bg-terminal-green' : 'bg-terminal-dim/40'}`} />
+                    <span className="text-gray-300 flex-1 truncate">{p.displayName}</span>
+                    {!p.connected && <span className="text-[9px] text-terminal-dim">offline</span>}
+                  </div>
+                ))}
+                {roomParticipants.filter((p) => p.role === 'player').length === 0 && (
+                  <p className="text-[10px] text-terminal-dim italic">No players yet</p>
+                )}
+              </div>
+              <button
+                onClick={handleSkipTurn}
+                disabled={!canSkipTurn}
+                title={canSkipTurn ? '' : 'Wait for the current action to resolve'}
+                className="w-full py-1.5 rounded border border-terminal-red/40 bg-terminal-red/10
+                  text-terminal-red text-xs font-semibold tracking-widest uppercase
+                  hover:bg-terminal-red/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              >
+                Skip Turn{currentTurnPlayer ? ` — ${currentTurnPlayer.name}` : ''}
+              </button>
+            </section>
+          )}
 
           {/* ── Scenario Clock ─────────────────────────────────────── */}
           <section>

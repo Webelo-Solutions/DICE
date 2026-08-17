@@ -10,9 +10,10 @@ import { INITIAL_ORG_STATE, normalizeNpcReputation } from '../types/orgState'
 const inRoom = () => !!useRoomStore.getState().membership
 
 // Live-state kv keys (the singletons that change throughout a session).
-const KV_SESSION = 'session'
-const KV_FEED    = 'feed'
-const KV_RESULT  = 'result'
+const KV_SESSION           = 'session'
+const KV_FEED              = 'feed'
+const KV_RESULT            = 'result'
+const KV_CAMPAIGN_CONTEXT  = 'campaignContext'
 
 const logErr = (e: unknown) => console.error('[api-sync]', e)
 
@@ -23,7 +24,7 @@ const logErr = (e: unknown) => console.error('[api-sync]', e)
 export async function hydrateFromApi(): Promise<void> {
   const [
     roster, library, sessionHistory, orgState, activeOrgProfile,
-    session, feed, result,
+    session, feed, result, campaignContext,
     campaigns, customScenarios, saves,
     injectsCatalog,
   ] = await Promise.all([
@@ -35,6 +36,7 @@ export async function hydrateFromApi(): Promise<void> {
     api.getKv<ReturnType<typeof useGameStore.getState>['session']>(KV_SESSION),
     api.getKv<ReturnType<typeof useGameStore.getState>['feed']>(KV_FEED),
     api.getKv<ReturnType<typeof useGameStore.getState>['result']>(KV_RESULT),
+    api.getKv<ReturnType<typeof useGameStore.getState>['activeCampaignContext']>(KV_CAMPAIGN_CONTEXT),
     api.listCampaigns(),
     api.listCustomScenarios(),
     api.listSaves(),
@@ -52,9 +54,16 @@ export async function hydrateFromApi(): Promise<void> {
     session: session ?? null,
     feed: feed ?? [],
     result: result ?? null,
+    activeCampaignContext: campaignContext ?? null,
   })
 
-  useCampaignStore.setState({ campaigns, customScenarios, saves })
+  // Older campaigns persisted before per-scenario outcome tracking was added
+  // have no scenarioResults array — default it so readers never see undefined.
+  useCampaignStore.setState({
+    campaigns: campaigns.map((c) => ({ ...c, scenarioResults: c.scenarioResults ?? [] })),
+    customScenarios,
+    saves,
+  })
   useInjectsCatalogStore.setState({ entries: injectsCatalog })
 }
 
@@ -110,9 +119,10 @@ function debounced<T>(fn: (v: T) => Promise<unknown>, ms = 400) {
   }
 }
 
-const writeSession = debounced((v: unknown) => api.setKv(KV_SESSION, v))
-const writeFeed    = debounced((v: unknown) => api.setKv(KV_FEED, v))
-const writeResult  = debounced((v: unknown) => api.setKv(KV_RESULT, v))
+const writeSession  = debounced((v: unknown) => api.setKv(KV_SESSION, v))
+const writeFeed     = debounced((v: unknown) => api.setKv(KV_FEED, v))
+const writeResult   = debounced((v: unknown) => api.setKv(KV_RESULT, v))
+const writeCampaignContext = debounced((v: unknown) => api.setKv(KV_CAMPAIGN_CONTEXT, v))
 const writeOrgState = debounced((v: Parameters<typeof api.setOrgState>[0]) => api.setOrgState(v))
 const writeOrgProfile = debounced((v: Parameters<typeof api.setOrgProfile>[0]) => api.setOrgProfile(v))
 
@@ -136,6 +146,7 @@ export function startApiSync(): () => void {
     if (prev.session !== state.session && !inRoom()) writeSession(state.session)
     if (prev.feed !== state.feed && !inRoom()) writeFeed(state.feed)
     if (prev.result !== state.result && !inRoom()) writeResult(state.result)
+    if (prev.activeCampaignContext !== state.activeCampaignContext) writeCampaignContext(state.activeCampaignContext)
     if (prev.orgState !== state.orgState) writeOrgState(state.orgState)
     if (prev.activeOrgProfile !== state.activeOrgProfile) writeOrgProfile(state.activeOrgProfile)
   })

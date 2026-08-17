@@ -1,4 +1,4 @@
-import type { Character, OutcomeTier, RollRecord, StatKey } from '../types/game'
+import type { Character, OutcomeTier, RollRecord, StatKey, TraitName } from '../types/game'
 import { SKILL_KEYWORDS } from '../data/skills'
 
 export function rollD20(): number {
@@ -26,6 +26,17 @@ export function inferStatFromAction(action: string): StatKey {
 export interface RollContext {
   round:        number
   timerExpired: boolean
+  // Momentum: how many consecutive Success/Critical Hit outcomes this
+  // character has landed in a row, BEFORE this roll. Tracked by the caller
+  // (GameSession.tsx) since it spans multiple rolls, not just this one.
+  consecutiveSuccesses?: number
+}
+
+export interface ModifierResult {
+  modifier:      number
+  // Passive traits that actually contributed a bonus to this specific roll —
+  // lets reports show trait usage without re-deriving these conditions.
+  traitsApplied: TraitName[]
 }
 
 export function computeModifier(
@@ -34,8 +45,11 @@ export function computeModifier(
   dc:          number,
   statOverride?: StatKey,
   ctx?:        RollContext,
-): number {
+): ModifierResult {
   let modifier = 0
+  const traitsApplied: TraitName[] = []
+  const has = (t: TraitName) => character.traits.includes(t)
+  const apply = (t: TraitName, bonus: number) => { modifier += bonus; traitsApplied.push(t) }
   const lower = action.toLowerCase()
 
   // Stat bonus: each point above 2 grants +1
@@ -54,19 +68,30 @@ export function computeModifier(
 
   // ── Trait bonuses ────────────────────────────────────────────────────────────
   // Eagle Eye: +1 to all vigilance-based rolls
-  if (character.traits.includes('Eagle Eye') && relevantStat === 'vigilance') modifier += 1
+  if (has('Eagle Eye') && relevantStat === 'vigilance') apply('Eagle Eye', 1)
 
   // Digital Bloodhound: +1 to all analysis-based rolls
-  if (character.traits.includes('Digital Bloodhound') && relevantStat === 'analysis') modifier += 1
+  if (has('Digital Bloodhound') && relevantStat === 'analysis') apply('Digital Bloodhound', 1)
 
   // First Responder: +1 to all rolls in round 1
-  if (character.traits.includes('First Responder') && ctx?.round === 1) modifier += 1
+  if (has('First Responder') && ctx?.round === 1) apply('First Responder', 1)
 
   // Calm Under Pressure: absorb the timer-expiry DC spike by granting an equivalent modifier boost
-  if (character.traits.includes('Calm Under Pressure') && ctx?.timerExpired) modifier += 4
+  if (has('Calm Under Pressure') && ctx?.timerExpired) apply('Calm Under Pressure', 4)
+
+  // Ghost Protocol: +1 to all stealth-based rolls
+  if (has('Ghost Protocol') && relevantStat === 'stealth') apply('Ghost Protocol', 1)
+
+  // Command Presence: +1 to all command-based rolls
+  if (has('Command Presence') && relevantStat === 'command') apply('Command Presence', 1)
+
+  // Momentum: +1 per consecutive Success/Critical Hit landed so far, capped at +3
+  if (has('Momentum') && ctx?.consecutiveSuccesses) {
+    apply('Momentum', Math.min(ctx.consecutiveSuccesses, 3))
+  }
 
   void dc
-  return modifier
+  return { modifier, traitsApplied }
 }
 
 export function adjudicateRoll(raw: number, modifier: number, dc: number): OutcomeTier {
@@ -91,10 +116,10 @@ export function buildRollRecord(
   statOverride?: StatKey,
   ctx?:        RollContext,
 ): RollRecord {
-  const modifier = computeModifier(character, action, dc, statOverride, ctx)
-  const total    = raw + modifier
-  const outcome  = adjudicateRoll(raw, modifier, dc)
-  return { player: playerId, raw, modifier, total, dc, outcome }
+  const { modifier, traitsApplied } = computeModifier(character, action, dc, statOverride, ctx)
+  const total   = raw + modifier
+  const outcome = adjudicateRoll(raw, modifier, dc)
+  return { player: playerId, raw, modifier, total, dc, outcome, traitsApplied: traitsApplied.length > 0 ? traitsApplied : undefined }
 }
 
 export function outcomeTierLabel(tier: OutcomeTier): string {

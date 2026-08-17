@@ -14,6 +14,9 @@ import type { AssessmentResult } from '../engine/assessmentClient'
 import { callOptimalPath } from '../engine/optimalPathClient'
 import type { OptimalPathResult } from '../engine/optimalPathClient'
 import { ADVERSARY_CLASSES } from '../types/adversary'
+import { summarizeTraitUsage } from '../utils/traitUsage'
+import { computeSessionGpa, recentAverageGpa } from '../utils/trendAnalysis'
+import { noveltyForScenario } from '../utils/techniqueCoverage'
 
 const OUTCOME_LABEL: Record<string, string> = {
   victory: 'CONTAINED — Full Containment Achieved',
@@ -46,7 +49,7 @@ function gradeChip(letter: string, size: 'sm' | 'lg' = 'sm') {
 
 export function HotWash() {
   const navigate   = useNavigate()
-  const { session, feed, result, providerConfig } = useGameStore()
+  const { session, feed, result, providerConfig, sessionHistory } = useGameStore()
 
   const [aiAssessment,  setAiAssessment]  = useState<AssessmentResult | null>(null)
   const [aiLoading,     setAiLoading]     = useState(false)
@@ -82,6 +85,10 @@ export function HotWash() {
 
   const actionTriples  = extractActionTriples(feed)
   const playerGrades   = computePlayerGrades(actionTriples, session.players.map((p) => p.name))
+
+  const traitUsage      = summarizeTraitUsage(feed)
+  const thisSessionGpa  = computeSessionGpa(feed)
+  const priorAverageGpa = recentAverageGpa(sessionHistory, session.id)
 
   const handleGenerateAssessment = async () => {
     setAiLoading(true)
@@ -277,7 +284,39 @@ export function HotWash() {
               </div>
             ))}
           </div>
+          {priorAverageGpa !== null && (
+            <p className="text-xs text-gray-500 mt-3">
+              This session's average grade: <span className="font-semibold text-gray-800">{thisSessionGpa.toFixed(2)} GPA</span>
+              {' '}vs. your recent average of <span className="font-semibold text-gray-800">{priorAverageGpa.toFixed(2)} GPA</span>
+              {' '}({thisSessionGpa >= priorAverageGpa ? 'at or above trend' : 'below recent trend'}).
+              See Team Analytics for the full trend.
+            </p>
+          )}
         </section>
+
+        {/* ── TRAIT USAGE ────────────────────────────────────────────────── */}
+        {traitUsage.length > 0 && (
+          <section>
+            <h3 className="text-sm font-bold tracking-widest text-gray-500 uppercase mb-1">
+              Trait &amp; Ability Usage
+            </h3>
+            <p className="text-xs text-gray-500 mb-4">
+              Character traits that actually influenced this session, whether as a passive roll bonus
+              or an actively spent once-per-session ability.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {traitUsage.map(({ trait, count }) => (
+                <div
+                  key={trait}
+                  className="flex items-center gap-2 border border-purple-200 bg-purple-50 rounded px-3 py-1.5"
+                >
+                  <span className="text-xs font-semibold text-purple-900">{trait}</span>
+                  <span className="text-[10px] font-mono text-purple-600">×{count}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* ── DECISION LOG ──────────────────────────────────────────────── */}
         <section>
@@ -730,6 +769,7 @@ export function HotWash() {
             }
           }
           if (techniques.length === 0) return null
+          const novel = noveltyForScenario(techniques, sessionHistory, session.id)
           return (
             <section>
               <h3 className="text-sm font-bold tracking-widest text-gray-500 uppercase mb-1">
@@ -737,6 +777,7 @@ export function HotWash() {
               </h3>
               <p className="text-xs text-gray-500 mb-4">
                 Techniques embedded in scenario clues. Use these as a study guide — each one represents a real adversary behaviour your team faced.
+                <span className="inline-block ml-1 px-1.5 py-0.5 rounded bg-green-100 text-green-800 font-semibold">NEW</span> marks a technique this team hasn't faced before.
               </p>
               <div className="flex flex-wrap gap-2">
                 {techniques.map(({ id, name }) => (
@@ -746,11 +787,17 @@ export function HotWash() {
                   >
                     <span className="font-mono text-xs font-bold text-blue-700">{id}</span>
                     <span className="text-xs text-blue-900">{name}</span>
+                    {novel.has(id) && (
+                      <span className="px-1 py-0.5 rounded bg-green-100 text-green-800 text-[9px] font-bold uppercase tracking-widest">
+                        New
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
               <p className="text-xs text-gray-400 mt-3">
                 {techniques.length} unique technique{techniques.length !== 1 ? 's' : ''} across {session.scenario.acts.length} act{session.scenario.acts.length !== 1 ? 's' : ''}
+                {novel.size > 0 && ` — ${novel.size} new to this team`}
               </p>
             </section>
           )

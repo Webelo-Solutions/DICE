@@ -3,12 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { useCampaignStore } from '../store/campaignStore'
 import { useGameStore }     from '../store/gameStore'
 import { ALL_SCENARIOS }    from '../data/scenarios'
-import type { ScenarioPack, ScenarioAct, Inject, Clue } from '../types/game'
+import type { ScenarioPack, ScenarioAct, Inject, Clue, SessionResult } from '../types/game'
 import type { Campaign, CustomScenario } from '../types/campaign'
 import type { OrgProfile } from '../types/orgProfile'
 import { INITIAL_ORG_PROFILE, ORG_PROFILE_CHOICES } from '../types/orgProfile'
 import { Field, SectionTitle, IconBtn, inputCls, labelCls } from '../components/formAtoms'
 import { CriticalInjectIdPicker } from '../components/CriticalInjectIdPicker'
+import { launchCampaignScenario } from '../utils/campaignPlay'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -28,6 +29,17 @@ const STATUS_COLOR: Record<Campaign['status'], string> = {
   active:    'text-terminal-green',
   completed: 'text-terminal-blue',
   abandoned: 'text-terminal-red',
+}
+
+const OUTCOME_LABEL: Record<SessionResult['outcome'], string> = {
+  victory: '✓ Victory',
+  partial: '◐ Partial',
+  defeat:  '✕ Defeat',
+}
+const OUTCOME_COLOR: Record<SessionResult['outcome'], string> = {
+  victory: 'text-terminal-green',
+  partial: 'text-terminal-amber',
+  defeat:  'text-terminal-red',
 }
 
 function blankAct(n: number): ScenarioAct {
@@ -70,7 +82,7 @@ function blankCampaign(): Campaign {
     characterIds:         [],
     status:               'draft',
     currentScenarioIndex: 0,
-    completedScenarioIds: [],
+    scenarioResults:      [],
     notes:                '',
     orgProfile:           { ...INITIAL_ORG_PROFILE },
     createdAt:            now,
@@ -616,7 +628,8 @@ function CampaignEditorForm({ initial, onSave, onDelete, onPlay, isNew }: CEProp
             {camp.scenarioSequence.map((id, i) => {
               const sc = allScenarios.find((s) => s.id === id)
               if (!sc) return null
-              const isDone = camp.completedScenarioIds.includes(id)
+              const scenarioResult = camp.scenarioResults.find((r) => r.scenarioIndex === i)
+              const isDone = !!scenarioResult
               const isCurrent = i === camp.currentScenarioIndex && !isDone
               return (
                 <div key={id}
@@ -630,7 +643,11 @@ function CampaignEditorForm({ initial, onSave, onDelete, onPlay, isNew }: CEProp
                     <div className="text-xs font-semibold text-white truncate">{sc.title}</div>
                     <div className="text-[10px] text-terminal-dim">{sc.id} · {DIFF_LABEL[sc.difficulty]}</div>
                   </div>
-                  {isDone  && <span className="text-[10px] text-terminal-blue">✓ Done</span>}
+                  {scenarioResult && (
+                    <span className={`text-[10px] font-semibold ${OUTCOME_COLOR[scenarioResult.outcome]}`}>
+                      {OUTCOME_LABEL[scenarioResult.outcome]}
+                    </span>
+                  )}
                   {isCurrent && <span className="text-[10px] text-terminal-green animate-pulse">▶ Next</span>}
                   <IconBtn onClick={() => moveScenario(i, -1)} title="Move up"   disabled={i === 0}>↑</IconBtn>
                   <IconBtn onClick={() => moveScenario(i,  1)} title="Move down" disabled={i === camp.scenarioSequence.length - 1}>↓</IconBtn>
@@ -764,38 +781,7 @@ export function CampaignBuilder() {
   }
 
   const handlePlayCampaign = (c: Campaign) => {
-    const allScenarios = [...ALL_SCENARIOS, ...customScenarios]
-    const sc = allScenarios.find((s) => s.id === c.scenarioSequence[c.currentScenarioIndex])
-    if (!sc) return
-    useGameStore.setState((s) => ({
-      session: {
-        id:                     'pending',
-        scenario:               sc,
-        players:                s.roster.filter((r) => c.characterIds.includes(r.id)),
-        mode:                   c.characterIds.length > 1 ? 'team' : 'solo',
-        initiativeOrder:        [],
-        currentTurnPlayerId:    '',
-        act:                    1,
-        round:                  1,
-        scenarioClockRemaining: sc.scenarioClockStart,
-        attackerProgress:       [sc.killChainStages[0]],
-        activeComplications:    [],
-        lastRoll:               null,
-        roundTimerExpired:      false,
-        activeEffects:          [],
-        scriptedCriticalEffect: null,
-        critHitInjectsDrawn:    [],
-        critFailInjectsDrawn:   [],
-        resolvedCriticalHitInjects:  [],
-        resolvedCriticalFailInjects: [],
-        phase:                  'init',
-        status:                 'setup',
-        timerDifficulty:        'analyst',
-        startedAt:              0,
-        npcs:                   [],
-      },
-      activeOrgProfile: c.orgProfile ?? null,
-    }))
+    if (!launchCampaignScenario(c, customScenarios)) return
     updateCampaign(c.id, { status: 'active' })
     navigate('/roster')
   }

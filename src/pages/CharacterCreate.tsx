@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useGameStore } from '../store/gameStore'
 import { CharacterCard } from '../components/CharacterCard'
 import { ALL_SKILLS } from '../data/skills'
+import { TRAIT_DEFINITIONS } from '../data/traitDefinitions'
 import type { Character, CharacterClass, CharacterStats, Skill, SkillName, StatKey, TraitName } from '../types/game'
 
 const CLASSES: { name: CharacterClass; desc: string; primaryStats: StatKey[] }[] = [
@@ -14,14 +15,10 @@ const CLASSES: { name: CharacterClass; desc: string; primaryStats: StatKey[] }[]
   { name: 'Commander',    desc: 'Keeps the ship steady. Stakeholder bridge, escalation owner.', primaryStats: ['command', 'fortitude'] },
 ]
 
-const ALL_TRAITS: { name: TraitName; desc: string }[] = [
-  { name: 'First Responder',      desc: 'Always wins initiative ties. +1 to first-round rolls.' },
-  { name: 'Eagle Eye',            desc: 'Once per session, reroll a failed detection check.' },
-  { name: 'Calm Under Pressure',  desc: 'Timer expiry grants +1 instead of DC penalty.' },
-  { name: 'Digital Bloodhound',   desc: 'On a crit hit while hunting, reveal one attacker objective.' },
-  { name: 'Composure',            desc: 'Ignore the first critical fail result each session.' },
-  { name: 'Rally',                desc: 'Once per session, grant another player +3 to their next roll.' },
-]
+// Derived from traitDefinitions.ts (the single source of truth for trait
+// copy) so this list can never drift from what the trait actually does.
+const ALL_TRAITS: { name: TraitName; desc: string }[] =
+  Object.values(TRAIT_DEFINITIONS).map((t) => ({ name: t.name, desc: t.mechanicalEffect }))
 
 const STAT_KEYS: StatKey[] = ['vigilance', 'agility', 'analysis', 'fortitude', 'stealth', 'command']
 const STAT_LABELS: Record<StatKey, string> = {

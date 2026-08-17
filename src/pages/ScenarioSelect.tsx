@@ -6,6 +6,7 @@ import { useCampaignStore } from '../store/campaignStore'
 import { CATEGORIES, CUSTOM_CATEGORY } from '../data/categories'
 import type { ScenarioCategoryDef } from '../data/categories'
 import type { ScenarioPack } from '../types/game'
+import { matchingTechniques } from '../utils/techniqueCoverage'
 
 const DIFF_LABEL = ['', 'Novice', 'Analyst', 'Senior', 'Expert', 'Elite']
 const DIFF_COLOR = ['', 'text-terminal-green', 'text-terminal-blue', 'text-terminal-amber', 'text-orange-400', 'text-terminal-red']
@@ -21,15 +22,35 @@ export function ScenarioSelect({ onSelect }: Props) {
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({})
   const toggle = (id: string) => setOpenFolders((p) => ({ ...p, [id]: !p[id] }))
 
+  const [techniqueQuery, setTechniqueQuery] = useState('')
+  const hasQuery = techniqueQuery.trim().length > 0
+  const matchesQuery = (s: ScenarioPack) => !hasQuery || matchingTechniques(s, techniqueQuery).length > 0
+
   const grouped = CATEGORIES
     .map((cat) => ({
       cat,
-      scenarios: ALL_SCENARIOS.filter((s) => (s.category ?? 'custom') === cat.id),
+      scenarios: ALL_SCENARIOS
+        .filter((s) => (s.category ?? 'custom') === cat.id)
+        .filter(matchesQuery)
+        .sort((a, b) => a.difficulty - b.difficulty),
     }))
     .filter((g) => g.scenarios.length > 0)
 
   const totalBuiltIn = ALL_SCENARIOS.length
   const totalCustom  = customScenarios.length
+  const sortedCustomScenarios = [...customScenarios]
+    .filter(matchesQuery)
+    .sort((a, b) => a.difficulty - b.difficulty)
+  const noMatches = hasQuery && grouped.length === 0 && sortedCustomScenarios.length === 0
+
+  // Every scenario shown anywhere on this screen — built-in categories plus
+  // the player's own custom folder — so "random" really does mean any of them.
+  const allSelectable = [...ALL_SCENARIOS, ...customScenarios]
+  const pickRandomScenario = () => {
+    const scenario = allSelectable[Math.floor(Math.random() * allSelectable.length)]
+    onSelect(scenario)
+    navigate('/roster')
+  }
 
   return (
     <div className="min-h-screen bg-terminal-bg p-8 font-mono">
@@ -52,11 +73,56 @@ export function ScenarioSelect({ onSelect }: Props) {
           </button>
         </div>
 
-        <h1 className="text-2xl font-bold text-white mb-1">SELECT SCENARIO</h1>
-        <p className="text-sm text-terminal-dim mb-8">
-          {totalBuiltIn} built-in scenarios across {grouped.length} categories
-          {totalCustom > 0 ? ` · ${totalCustom} custom` : ''}.
-        </p>
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-white mb-1">SELECT SCENARIO</h1>
+            <p className="text-sm text-terminal-dim">
+              {totalBuiltIn} built-in scenarios across {grouped.length} categories
+              {totalCustom > 0 ? ` · ${totalCustom} custom` : ''}.
+            </p>
+          </div>
+          <button
+            onClick={pickRandomScenario}
+            title="Pick a random scenario from every category"
+            className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded border border-terminal-green/40
+              bg-terminal-green/10 text-terminal-green text-xs font-bold tracking-widest uppercase
+              hover:bg-terminal-green/20 hover:border-terminal-green/70 transition-all duration-150"
+          >
+            <span className="text-base leading-none">🎲</span>
+            Random Scenario
+          </button>
+        </div>
+
+        {/* Technique search */}
+        <div className="relative mb-8">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-terminal-dim text-xs">⌕</span>
+          <input
+            type="text"
+            value={techniqueQuery}
+            onChange={(e) => setTechniqueQuery(e.target.value)}
+            placeholder="Search by MITRE ATT&CK technique — e.g. T1566 or Phishing"
+            className="w-full pl-9 pr-9 py-2.5 rounded border border-terminal-border bg-terminal-surface
+              text-sm text-white placeholder:text-terminal-dim focus:outline-none focus:border-terminal-green/50
+              transition-colors"
+          />
+          {hasQuery && (
+            <button
+              onClick={() => setTechniqueQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-terminal-dim hover:text-white text-xs"
+              title="Clear search"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        {noMatches && (
+          <div className="mb-8 p-6 rounded border border-terminal-border bg-terminal-surface/30 text-center">
+            <p className="text-sm text-terminal-dim">
+              No scenarios reference a technique matching "{techniqueQuery}".
+            </p>
+          </div>
+        )}
 
         {/* Category folders */}
         <div className="space-y-5">
@@ -65,20 +131,22 @@ export function ScenarioSelect({ onSelect }: Props) {
               key={cat.id}
               cat={cat}
               scenarios={scenarios}
-              isOpen={openFolders[cat.id] ?? false}
+              isOpen={hasQuery ? true : (openFolders[cat.id] ?? false)}
               onToggle={() => toggle(cat.id)}
               onSelect={(s) => { onSelect(s); navigate('/roster') }}
+              techniqueQuery={hasQuery ? techniqueQuery : undefined}
             />
           ))}
 
-          {customScenarios.length > 0 && (
+          {sortedCustomScenarios.length > 0 && (
             <ScenarioFolder
               cat={CUSTOM_CATEGORY}
-              scenarios={customScenarios}
-              isOpen={openFolders['custom'] ?? false}
+              scenarios={sortedCustomScenarios}
+              isOpen={hasQuery ? true : (openFolders['custom'] ?? false)}
               onToggle={() => toggle('custom')}
               onSelect={(s) => { onSelect(s); navigate('/roster') }}
               isCustom
+              techniqueQuery={hasQuery ? techniqueQuery : undefined}
               headerExtra={
                 <button
                   onClick={(e) => { e.stopPropagation(); navigate('/campaigns') }}
@@ -121,6 +189,7 @@ function ScenarioFolder({
   onSelect,
   isCustom,
   headerExtra,
+  techniqueQuery,
 }: {
   cat:          ScenarioCategoryDef
   scenarios:    ScenarioPack[]
@@ -129,6 +198,7 @@ function ScenarioFolder({
   onSelect:     (s: ScenarioPack) => void
   isCustom?:    boolean
   headerExtra?: React.ReactNode
+  techniqueQuery?: string
 }) {
   return (
     <div>
@@ -187,6 +257,7 @@ function ScenarioFolder({
                     isCustom={isCustom}
                     accentColor={cat.textColor}
                     isTutorial={scenario.id === 'TUTORIAL-01'}
+                    techniqueQuery={techniqueQuery}
                   />
                 ))}
               </div>
@@ -206,13 +277,16 @@ function ScenarioCard({
   isCustom,
   accentColor,
   isTutorial,
+  techniqueQuery,
 }: {
   scenario:     ScenarioPack
   onSelect:     () => void
   isCustom?:    boolean
   accentColor:  string
   isTutorial?:  boolean
+  techniqueQuery?: string
 }) {
+  const matched = techniqueQuery ? matchingTechniques(scenario, techniqueQuery) : []
   return (
     <button
       onClick={onSelect}
@@ -267,6 +341,17 @@ function ScenarioCard({
           ✗ {scenario.failureCondition}
         </span>
       </div>
+
+      {matched.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-terminal-border/60">
+          {matched.map((t) => (
+            <span key={t.id} className="text-[9px] px-2 py-0.5 rounded bg-terminal-blue/10 text-terminal-blue
+              border border-terminal-blue/20 font-mono">
+              {t.id} · {t.name}
+            </span>
+          ))}
+        </div>
+      )}
     </button>
   )
 }

@@ -56,12 +56,12 @@ export type TraitName =
   | 'Digital Bloodhound'
   | 'Composure'
   | 'Rally'
-
-export interface TraitDefinition {
-  name:        TraitName
-  description: string
-  effect:      string
-}
+  | 'Ghost Protocol'
+  | 'Command Presence'
+  | 'Cross-Trained'
+  | 'Trusted Voice'
+  | 'Momentum'
+  | 'Second Wind'
 
 export interface Character {
   id:       string
@@ -203,6 +203,11 @@ export interface RollRecord {
   total:    number
   dc:       number
   outcome:  OutcomeTier
+  // Silent modifier-contributing traits that fired on this roll (Ghost
+  // Protocol, Command Presence, Momentum) — traits with their own visible
+  // feed entry (Composure, Second Wind, Rally, Trusted Voice) aren't
+  // repeated here. Absent/empty on rolls before this field existed.
+  traitsApplied?: TraitName[]
 }
 
 export interface GameSession {
@@ -243,6 +248,11 @@ export interface GameSession {
   startedAt:                 number   // Unix ms — set when initSession fires
   adversary?:                AdversaryState
   npcs:                      NPCState[]
+  // Once-per-session trait consumption (Composure, Rally, Second Wind), keyed
+  // by the player id who used the trait. Absent/missing entries mean unused —
+  // sessions saved before this field existed simply have no key for anyone,
+  // which reads the same as "nothing used yet."
+  usedOnceTraits:            Record<string, TraitName[]>
 }
 
 // ─── Narrative Feed ───────────────────────────────────────────────────────────
@@ -265,6 +275,10 @@ export interface FeedEntry {
   timestamp: number
   roll?:     RollRecord
   outcome?:  OutcomeTier
+  // Character id this entry is attributed to — set on the system entries
+  // raised by Composure/Second Wind/Rally/Trusted Voice so reports can
+  // count trait usage per player without parsing entry text.
+  player?:   string
 }
 
 // ─── Session End ──────────────────────────────────────────────────────────────

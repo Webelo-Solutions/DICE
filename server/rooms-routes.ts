@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { repository } from './db/sqlite-repository'
 import type { RoomRow, ParticipantRow } from './db/repository'
 import { newToken, hashToken, newRoomCode, hashPassphrase, verifyPassphrase } from './auth/tokens'
-import { subscribe, unsubscribe, broadcast } from './realtime'
+import { subscribe, unsubscribe, broadcast, connectedParticipantIds } from './realtime'
 import { setRoomProvider, getRoomProvider } from './ai-config'
 import { callDM } from '../src/engine/dmClient'
 import { levelForXp } from '../src/utils/leveling'
@@ -15,7 +15,11 @@ import type { OrgProfile } from '../src/types/orgProfile'
 
 // Push the current lobby (participant list) to everyone connected to the room.
 function broadcastLobby(roomId: string) {
-  broadcast(roomId, { type: 'lobby', participants: repository.listParticipants(roomId).map(toPublicParticipant) })
+  const connectedIds = connectedParticipantIds(roomId)
+  broadcast(roomId, {
+    type: 'lobby',
+    participants: repository.listParticipants(roomId).map((p) => toPublicParticipant(p, connectedIds)),
+  })
 }
 
 // Attach the resolved participant to the request (typed locally to avoid global
@@ -25,11 +29,12 @@ type AuthedRequest = FastifyRequest & { participant?: ParticipantRow }
 function toPublicRoom(r: RoomRow): Room {
   return { id: r.id, code: r.code, name: r.name, status: r.status as Room['status'], createdAt: r.createdAt, updatedAt: r.updatedAt }
 }
-function toPublicParticipant(p: ParticipantRow): Participant {
+function toPublicParticipant(p: ParticipantRow, connectedIds: Set<string> = new Set()): Participant {
   return {
     id: p.id, roomId: p.roomId, role: p.role as RoomRole, displayName: p.displayName,
     characterId: p.characterId ?? null, character: (p.character as Character | null) ?? null,
     lastSeenAt: p.lastSeenAt, createdAt: p.createdAt,
+    connected: connectedIds.has(p.id),
   }
 }
 
@@ -133,7 +138,11 @@ export async function roomRoutes(app: FastifyInstance) {
   app.get<{ Params: { code: string } }>('/rooms/:code', async (req, reply) => {
     const room = repository.getRoomByCode(req.params.code.toUpperCase())
     if (!room) return reply.code(404).send({ error: 'Room not found' })
-    return reply.send({ room: toPublicRoom(room), participants: repository.listParticipants(room.id).map(toPublicParticipant) })
+    const connectedIds = connectedParticipantIds(room.id)
+    return reply.send({
+      room: toPublicRoom(room),
+      participants: repository.listParticipants(room.id).map((p) => toPublicParticipant(p, connectedIds)),
+    })
   })
 
   // ── Per-room live session/feed (any member; role gating arrives in M3) ──
@@ -277,7 +286,7 @@ export async function roomRoutes(app: FastifyInstance) {
   // as a query parameter (?token=...). Acceptable on a trusted LAN; M5 hardening
   // can revisit. On connect we authenticate, send a state snapshot, and register
   // the socket to receive broadcasts until it closes.
-  app.get<{ Params: { code: string }; Querystring: { token?: string } }>(
+  app.get<{ Params: { code: string }; Querystring: { token?: string; spectate?: string } }>(
     '/rooms/:code/ws',
     { websocket: true },
     (socket, req) => {
@@ -296,22 +305,44 @@ export async function roomRoutes(app: FastifyInstance) {
       }
 
       const room = repository.getRoomByCode(req.params.code.toUpperCase())
+      if (!room) {
+        socket.send(JSON.stringify({ type: 'error', error: 'unauthorized' }))
+        socket.close()
+        return
+      }
+
+      // Read-only audience connection — no participant row, no token. Requires
+      // the explicit ?spectate=1 flag rather than treating "no token" as
+      // spectate-by-default, so a mistyped/expired token still hard-fails
+      // instead of silently downgrading a would-be player into a spectator.
+      // This socket is never listened on for incoming messages (see below —
+      // neither branch attaches an `on('message', ...)` handler), so there is
+      // no code path by which a spectator could mutate room/session state.
+      if (!req.query.token && req.query.spectate === '1') {
+        subscribe(room.id, socket, null)
+        const rs = repository.getRoomSession(room.id)
+        socket.send(JSON.stringify({ type: 'session', session: rs?.session ?? null, feed: rs?.feed ?? [] }))
+        socket.on('close', () => unsubscribe(room.id, socket))
+        return
+      }
+
       const token = req.query.token
       const participant = token ? repository.getParticipantByTokenHash(hashToken(token)) : null
-      if (!room || !participant || participant.roomId !== room.id) {
+      if (!participant || participant.roomId !== room.id) {
         socket.send(JSON.stringify({ type: 'error', error: 'unauthorized' }))
         socket.close()
         return
       }
       repository.touchParticipant(participant.id)
-      subscribe(room.id, socket)
+      subscribe(room.id, socket, participant.id)
+      broadcastLobby(room.id)
 
       // Initial snapshot so a freshly-connected client is immediately in sync.
       const rs = repository.getRoomSession(room.id)
       socket.send(JSON.stringify({ type: 'session', session: rs?.session ?? null, feed: rs?.feed ?? [] }))
-      socket.send(JSON.stringify({ type: 'lobby', participants: repository.listParticipants(room.id).map(toPublicParticipant) }))
+      socket.send(JSON.stringify({ type: 'lobby', participants: repository.listParticipants(room.id).map((p) => toPublicParticipant(p, connectedParticipantIds(room.id))) }))
 
-      socket.on('close', () => unsubscribe(room.id, socket))
+      socket.on('close', () => { unsubscribe(room.id, socket); broadcastLobby(room.id) })
     },
   )
 }

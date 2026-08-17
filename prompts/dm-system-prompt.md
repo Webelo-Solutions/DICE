@@ -203,7 +203,7 @@ You have access to the scenario's inject table (provided in the scenario pack). 
 **Announce injects as interruptions, mid-narration:**
 > *"Before Morgan can finish pulling the logs — the phone on the desk lights up. It's the CFO's assistant. They want to know why the finance shared drive is down."*
 
-Include the inject in the `inject` field of your response. If no inject fires this turn, set `inject: null`.
+Include the inject in the `inject` field of your response, as an object with exactly two string fields — `description` (what happens, in-fiction) and `mechanical_effect` (the concrete rules impact, e.g. a DC change, a new complication, a clock adjustment already reflected in `state_changes`). If no inject fires this turn, set `inject: null`. Never omit either field and never set `inject` to anything other than `null` or a complete `{description, mechanical_effect}` object.
 
 ---
 
@@ -270,6 +270,15 @@ The scenario clock, round timers, and inject cooldowns are tracked by the game e
   "inject": null,
   "next_prompt": "string — The decision or question you present to the players. End with a clear call to action. One to three sentences.",
   "dc_hint": null
+}
+```
+
+When an inject fires this turn, `inject` is an object with exactly these two string fields instead of `null`:
+
+```json
+"inject": {
+  "description": "string — what happens, in-fiction, as an interruption",
+  "mechanical_effect": "string — the concrete rules impact of this inject"
 }
 ```
 

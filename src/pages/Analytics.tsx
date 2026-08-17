@@ -6,6 +6,10 @@ import { levelForXp, xpToNextLevel } from '../utils/leveling'
 import { formatTimestamp } from '../utils/learningPath'
 import { api } from '../api/client'
 import type { LearningPriority } from '../types/game'
+import { computeGradeTrend } from '../utils/trendAnalysis'
+import { TrendChart } from '../components/TrendChart'
+import { aggregateTraitUsage } from '../utils/traitUsage'
+import { techniqueCoverageGaps } from '../utils/techniqueCoverage'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -51,6 +55,7 @@ export function Analytics() {
   const [expandedGap,  setExpandedGap]  = useState<string | null>(null)
   const [downloadError, setDownloadError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [showAllTechniqueGaps, setShowAllTechniqueGaps] = useState(false)
 
   const download = async (id: string | null, fn: () => Promise<void>) => {
     setDownloadError(null); setBusyId(id)
@@ -67,6 +72,11 @@ export function Analytics() {
   const recurringGaps = gaps.filter((g) => g.count >= 2)
   const watchGaps     = gaps.filter((g) => g.count === 1)
   const maxCount      = gaps.length > 0 ? Math.max(...gaps.map((g) => g.count)) : 1
+
+  const gradeTrend  = computeGradeTrend(sessionHistory)
+  const traitUsage  = aggregateTraitUsage(sessionHistory)
+  const techGaps    = techniqueCoverageGaps(sessionHistory)
+  const visibleTechniqueGaps = showAllTechniqueGaps ? techGaps.gaps : techGaps.gaps.slice(0, 24)
 
   // ── Empty state ─────────────────────────────────────────────────────────────
   if (sessionHistory.length === 0) {
@@ -164,6 +174,43 @@ export function Analytics() {
             </div>
           ))}
         </div>
+
+        {/* ── Grade trend ─────────────────────────────────────────────────────── */}
+        <section>
+          <h2 className="text-xs font-bold tracking-widest text-gray-500 uppercase mb-1">
+            Decision Grade Trend
+          </h2>
+          <p className="text-xs text-gray-400 mb-4">
+            Session-wide average grade (GPA) over time — the clearest read on whether the team is
+            actually improving, not just winning or losing. Dot color is the session outcome.
+          </p>
+          <div className="bg-white rounded border border-gray-200 p-4">
+            <TrendChart points={gradeTrend} />
+          </div>
+        </section>
+
+        {/* ── Trait & ability usage ───────────────────────────────────────────── */}
+        {traitUsage.length > 0 && (
+          <section>
+            <h2 className="text-xs font-bold tracking-widest text-gray-500 uppercase mb-1">
+              Trait &amp; Ability Usage
+            </h2>
+            <p className="text-xs text-gray-400 mb-4">
+              How often each character trait has actually mattered across your session history.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {traitUsage.map(({ trait, count }) => (
+                <div
+                  key={trait}
+                  className="flex items-center gap-2 border border-purple-200 bg-purple-50 rounded px-3 py-1.5"
+                >
+                  <span className="text-xs font-semibold text-purple-900">{trait}</span>
+                  <span className="text-[10px] font-mono text-purple-600">×{count}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* ── Recurring skill gaps ────────────────────────────────────────────── */}
         <section>
@@ -362,6 +409,50 @@ export function Analytics() {
               </div>
             ))}
           </div>
+        </section>
+
+        {/* ── MITRE technique coverage gaps ───────────────────────────────────── */}
+        <section>
+          <div className="flex items-baseline gap-3 mb-1">
+            <h2 className="text-xs font-bold tracking-widest text-gray-500 uppercase">
+              Technique Coverage Gaps
+            </h2>
+            <span className="text-[10px] text-gray-400 font-semibold">
+              {techGaps.covered} / {techGaps.total} MITRE ATT&amp;CK techniques encountered
+            </span>
+          </div>
+          <p className="text-xs text-gray-400 mb-4">
+            Techniques that appear somewhere in the scenario library but this team has never faced.
+            Hover a gap to see which scenarios would cover it.
+          </p>
+          {techGaps.gaps.length === 0 ? (
+            <div className="bg-green-50 border border-green-200 rounded p-4 text-sm text-green-700">
+              Full coverage — every technique in the library has been encountered at least once.
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-2">
+                {visibleTechniqueGaps.map((t) => (
+                  <div
+                    key={t.id}
+                    title={`Covered by: ${t.scenarioTitles.slice(0, 5).join(', ')}${t.scenarioTitles.length > 5 ? `, +${t.scenarioTitles.length - 5} more` : ''}`}
+                    className="flex items-center gap-2 border border-gray-200 bg-white rounded px-3 py-1.5"
+                  >
+                    <span className="font-mono text-xs font-bold text-gray-500">{t.id}</span>
+                    <span className="text-xs text-gray-700">{t.name}</span>
+                  </div>
+                ))}
+              </div>
+              {techGaps.gaps.length > 24 && (
+                <button
+                  onClick={() => setShowAllTechniqueGaps((v) => !v)}
+                  className="text-[10px] text-gray-400 hover:text-gray-700 underline mt-3"
+                >
+                  {showAllTechniqueGaps ? 'Show fewer' : `Show all ${techGaps.gaps.length} gaps`}
+                </button>
+              )}
+            </>
+          )}
         </section>
 
         {/* ── Character progress ─────────────────────────────────────────────── */}

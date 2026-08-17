@@ -4,6 +4,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import type { GameSession } from '../types/game'
 import type { ActionTriple } from '../utils/actionGrading'
 import type { ProviderConfig } from '../types/provider'
+import { parseLLMJson } from './llmJson'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -120,7 +121,7 @@ export async function callAssessment(
       if (message.stop_reason === 'max_tokens') {
         throw new Error('Assessment was too long to complete — try ending the session with fewer total actions, or reduce the number of players.')
       }
-      raw = message.content[0].type === 'text' ? message.content[0].text : ''
+      raw = message.content.map((block) => block.type === 'text' ? block.text : '').join('')
       break
     }
     case 'openai': {
@@ -165,11 +166,5 @@ export async function callAssessment(
     }
   }
 
-  const json = raw.replace(/^```(?:json)?\s*/m, '').replace(/\s*```$/m, '').trim()
-
-  try {
-    return JSON.parse(json) as AssessmentResult
-  } catch {
-    throw new Error(`Assessment response could not be parsed. Raw: ${json.slice(0, 300)}`)
-  }
+  return parseLLMJson<AssessmentResult>(raw, 'assessment response')
 }

@@ -6,6 +6,7 @@ import type { ProviderConfig } from '../types/provider'
 import type { GameSession } from '../types/game'
 import type { AdversaryState, AdversaryTacticOption } from '../types/adversary'
 import { ADVERSARY_CLASSES } from '../types/adversary'
+import { parseLLMJson } from './llmJson'
 
 export interface AdversaryOptionsResponse {
   options:          AdversaryTacticOption[]
@@ -61,8 +62,7 @@ function buildNarratePayload(
 // ─── Response parsers ─────────────────────────────────────────────────────────
 
 function parseOptions(raw: string): AdversaryOptionsResponse {
-  const cleaned = raw.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim()
-  const parsed  = JSON.parse(cleaned)
+  const parsed = parseLLMJson<Record<string, any>>(raw, 'adversary options response')
   return {
     options:          parsed.options ?? [],
     currentObjective: parsed.currentObjective ?? '',
@@ -70,8 +70,7 @@ function parseOptions(raw: string): AdversaryOptionsResponse {
 }
 
 function parseNarrate(raw: string): AdversaryNarrateResponse {
-  const cleaned = raw.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim()
-  const parsed  = JSON.parse(cleaned)
+  const parsed = parseLLMJson<Record<string, any>>(raw, 'adversary narration response')
   return {
     attackerNarration:  parsed.attackerNarration  ?? '',
     defenderObservable: parsed.defenderObservable ?? '',

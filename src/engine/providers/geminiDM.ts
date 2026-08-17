@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { GoogleGenerativeAI, FinishReason } from '@google/generative-ai'
 import { DM_SYSTEM_PROMPT } from '../dmPrompt'
 import { buildPayload, parseDMResponse, HINT_SYSTEM_PROMPT } from '../dmUtils'
 import type { ProviderConfig } from '../../types/provider'
@@ -21,7 +21,7 @@ export async function geminiCallDM(
     systemInstruction: DM_SYSTEM_PROMPT,
     generationConfig: {
       responseMimeType: 'application/json',
-      maxOutputTokens:  2048,
+      maxOutputTokens:  8192,
     },
   })
 
@@ -32,6 +32,11 @@ export async function geminiCallDM(
   for await (const chunk of result.stream) {
     const text = chunk.text()
     if (text) { rawText += text; onChunk(text) }
+  }
+
+  const finalResponse = await result.response
+  if (finalResponse.candidates?.[0]?.finishReason === FinishReason.MAX_TOKENS) {
+    throw new Error('The DM\'s response was cut off before it finished (ran out of response length). Try a shorter or more specific action description and try again.')
   }
 
   return parseDMResponse(rawText)

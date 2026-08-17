@@ -39,6 +39,8 @@ export function ActionMenu({ character, onSubmit, disabled, dcHint, dcPenalty = 
 
   const actions    = CLASS_ACTIONS[character.class]
   const orgProfile = useGameStore((s) => s.activeOrgProfile)
+  // Cross-Trained softens the usual +2 outside-specialty penalty to +1.
+  const secondaryPenalty = character.traits.includes('Cross-Trained') ? 1 : 2
   const detailFor  = (sub: SubAction) => substituteOrgTokens(sub.detail, orgProfile)
 
   const select = (label: string, stat: StatKey | null, penalty: number, improvised = false) => {
@@ -68,8 +70,10 @@ export function ActionMenu({ character, onSubmit, disabled, dcHint, dcPenalty = 
 
   const effectiveDc = dcHint ? dcHint + dcPenalty : null
 
+  // Secondary actions can carry real sub-actions too now (cross-class unlocks
+  // borrow a full primary action, sub-actions included) — check both lists.
   const activeSubActions: SubAction[] = selection && !selection.improvised
-    ? (actions.primary.find((a) => a.label === selection.label)?.subActions ?? [])
+    ? ([...actions.primary, ...actions.secondary].find((a) => a.label === selection.label)?.subActions ?? [])
     : []
 
   return (
@@ -126,17 +130,20 @@ export function ActionMenu({ character, onSubmit, disabled, dcHint, dcPenalty = 
           <span className="text-[11px] font-mono tracking-widest text-terminal-amber/60 uppercase">
             Secondary
           </span>
-          <span className="text-[11px] font-mono text-terminal-amber/40">+2 DC — outside specialty</span>
+          <span className="text-[11px] font-mono text-terminal-amber/40">+{secondaryPenalty} DC — outside specialty</span>
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {actions.secondary.map((action) => {
+          {actions.secondary
+            .filter((action) => !action.minLevel || character.level >= action.minLevel)
+            .map((action) => {
             const active = selection?.label === action.label && !selection.improvised
+            const sourceNote = action.sourceClass ? `\nCross-trained from ${action.sourceClass}` : ''
             return (
               <button
                 key={action.id}
-                onClick={() => select(action.label, action.stat, 2)}
+                onClick={() => select(action.label, action.stat, secondaryPenalty)}
                 disabled={disabled}
-                title={`${action.description}\nStat: ${STAT_LABEL[action.stat]}\n+2 DC penalty`}
+                title={`${action.description}\nStat: ${STAT_LABEL[action.stat]}\n+${secondaryPenalty} DC penalty${sourceNote}`}
                 className={`group relative px-2.5 py-1 text-sm font-mono rounded border
                   transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed ${
                   active

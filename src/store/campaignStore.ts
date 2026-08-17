@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Campaign, CustomScenario, SaveSlot } from '../types/campaign'
+import type { SessionResult } from '../types/game'
 
 const MAX_SAVES = 20
 
@@ -12,6 +13,16 @@ interface CampaignStore {
   addCampaign:    (c: Campaign)                           => void
   updateCampaign: (id: string, updates: Partial<Campaign>) => void
   deleteCampaign: (id: string)                            => void
+
+  // Records the outcome of the scenario at `scenarioIndex` within a campaign's
+  // sequence. If that index is the campaign's current one, advances to the
+  // next scenario (or marks the campaign completed if it was the last).
+  completeCampaignScenario: (
+    campaignId:    string,
+    scenarioIndex: number,
+    scenarioId:    string,
+    outcome:       SessionResult['outcome'],
+  ) => void
 
   // Custom scenario CRUD
   addCustomScenario:    (s: CustomScenario)                           => void
@@ -41,6 +52,26 @@ export const useCampaignStore = create<CampaignStore>()(
 
       deleteCampaign: (id) =>
         set((s) => ({ campaigns: s.campaigns.filter((c) => c.id !== id) })),
+
+      completeCampaignScenario: (campaignId, scenarioIndex, scenarioId, outcome) =>
+        set((s) => ({
+          campaigns: s.campaigns.map((c) => {
+            if (c.id !== campaignId) return c
+            const scenarioResults = [
+              ...c.scenarioResults.filter((r) => r.scenarioIndex !== scenarioIndex),
+              { scenarioIndex, scenarioId, outcome, completedAt: Date.now() },
+            ]
+            const isCurrent  = scenarioIndex === c.currentScenarioIndex
+            const nextIndex  = isCurrent ? c.currentScenarioIndex + 1 : c.currentScenarioIndex
+            return {
+              ...c,
+              scenarioResults,
+              currentScenarioIndex: nextIndex,
+              status:    nextIndex >= c.scenarioSequence.length ? 'completed' : 'active',
+              updatedAt: Date.now(),
+            }
+          }),
+        })),
 
       addCustomScenario: (scenario) =>
         set((s) => ({ customScenarios: [...s.customScenarios, scenario] })),

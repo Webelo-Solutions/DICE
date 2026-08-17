@@ -17,11 +17,12 @@ export async function anthropicCallDM(
 ): Promise<DMResponse> {
   const client  = new Anthropic({ apiKey: config.apiKey, dangerouslyAllowBrowser: true })
   const payload = buildPayload(session, action, orgState, orgProfile)
-  let rawText   = ''
+  let rawText    = ''
+  let stopReason: string | null = null
 
   const stream = client.messages.stream({
     model:      config.model,
-    max_tokens: 2048,
+    max_tokens: 8192,
     system:     DM_SYSTEM_PROMPT,
     messages:   [{ role: 'user', content: JSON.stringify(payload, null, 2) }],
   })
@@ -30,7 +31,13 @@ export async function anthropicCallDM(
     if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
       rawText += chunk.delta.text
       onChunk(chunk.delta.text)
+    } else if (chunk.type === 'message_delta') {
+      stopReason = chunk.delta.stop_reason
     }
+  }
+
+  if (stopReason === 'max_tokens') {
+    throw new Error('The DM\'s response was cut off before it finished (ran out of response length). Try a shorter or more specific action description and try again.')
   }
 
   return parseDMResponse(rawText)
