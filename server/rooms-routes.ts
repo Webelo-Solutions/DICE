@@ -60,6 +60,18 @@ function isGameRole(value: unknown): value is CharacterClass {
   return typeof value === 'string' && (GAME_ROLES as string[]).includes(value)
 }
 
+// Hosts that mean "this machine". Used only to recognise the development setup
+// in the WebSocket origin check below.
+const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1'])
+
+// Strip the port from a Host header, allowing for bracketed IPv6 literals
+// ("[::1]:5173" → "::1").
+function isLoopbackHost(hostHeader: string | undefined): boolean {
+  if (!hostHeader) return false
+  const withoutPort = /^(\[[^\]]+\]|[^:]+)(?::\d+)?$/.exec(hostHeader.trim())?.[1] ?? hostHeader
+  return LOOPBACK_HOSTNAMES.has(withoutPort.replace(/^\[|\]$/g, '').toLowerCase())
+}
+
 // Resolve the bearer token → participant, or 401. Used as a preHandler.
 function authenticate(req: AuthedRequest, reply: FastifyReply): boolean {
   const header = req.headers.authorization
@@ -672,7 +684,24 @@ export async function roomRoutes(app: FastifyInstance) {
       if (origin) {
         let originHost = ''
         try { originHost = new URL(origin).host } catch { /* malformed */ }
-        if (originHost !== req.headers.host) {
+        const sameHost = originHost === req.headers.host
+
+        // Development runs the SPA on Vite (port 5173) with /api proxied here.
+        // Vite's `changeOrigin: true` rewrites the Host header to the API server
+        // but deliberately leaves Origin as the page's own — so a perfectly
+        // legitimate browser arrives with Origin localhost:5173 and Host
+        // 127.0.0.1:3001. Strict equality rejects it, which silently breaks
+        // every room in dev: the client is told 'error', drops its membership,
+        // and bounces out of the lobby with nothing in the console.
+        //
+        // Both sides being loopback is exactly that case, and it is not a
+        // cross-site hole: a remote attacker's page cannot be served from a
+        // loopback origin without already executing code on this machine. A LAN
+        // host (DICE_LAN=1) is unaffected — its players' Origin and Host are the
+        // same LAN address, and an attacker's is neither loopback nor a match.
+        const bothLoopback = isLoopbackHost(originHost) && isLoopbackHost(req.headers.host)
+
+        if (!sameHost && !bothLoopback) {
           socket.send(JSON.stringify({ type: 'error', error: 'Origin not allowed' }))
           socket.close()
           return
