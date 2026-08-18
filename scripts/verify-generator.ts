@@ -8,7 +8,12 @@
 import { ALL_SCENARIOS } from '../src/data/scenarios'
 import { generateCampaign, rerollSlot, difficultyRamp, newSeed } from '../src/utils/campaignGenerator'
 import type { GeneratorOptions } from '../src/utils/campaignGenerator'
+import {
+  generateCampaignName, nameSpaceSize, inheritedOrgProfile, orgProfileFieldCount as orgFieldCount,
+} from '../src/utils/campaignDefaults'
 import type { SessionRecord } from '../src/types/history'
+import type { Campaign } from '../src/types/campaign'
+import type { OrgProfile } from '../src/types/orgProfile'
 
 let failures = 0
 const check = (name: string, ok: boolean, detail = '') => {
@@ -147,6 +152,68 @@ section('Random seeds')
     if (r.slots.length !== 15 || new Set(r.slots.map((s) => s.scenario.id)).size !== 15) bad++
   }
   check('ten independent draws all produce 15 distinct scenarios', bad === 0, `${bad} bad draws`)
+}
+
+section('Campaign codenames')
+{
+  const names = Array.from({ length: 400 }, () => generateCampaignName())
+  check('every name is an operation codename',
+    names.every((n) => /^Operation [A-Z]/.test(n)),
+    names.find((n) => !/^Operation [A-Z]/.test(n)))
+  check('names stay short enough to say out loud',
+    names.every((n) => n.split(' ').length <= 4), names.find((n) => n.split(' ').length > 4))
+  const distinct = new Set(names).size
+  check('400 draws produce plenty of variety', distinct > 200, `${distinct} distinct`)
+  console.log(`     ${distinct} distinct in 400 draws · ${nameSpaceSize().toLocaleString()} possible`)
+  console.log(`     e.g. ${names.slice(0, 5).join(' · ')}`)
+
+  // The whole point of passing existing names in.
+  const taken = names.slice(0, 300)
+  const fresh = Array.from({ length: 50 }, () => generateCampaignName(taken))
+  check('never returns a name already in use',
+    fresh.every((n) => !taken.includes(n)), fresh.find((n) => taken.includes(n)))
+
+  // Exhaustion must still terminate with something usable, not loop or repeat.
+  const everything = Array.from({ length: 3000 }, () => generateCampaignName())
+  const cornered = generateCampaignName(everything)
+  check('degrades to a suffixed variant rather than repeating when cornered',
+    cornered.length > 0 && !everything.includes(cornered), cornered)
+}
+
+section('Org profile inheritance')
+{
+  const profile = { siem: 'Sentinel', edr: 'Defender', soar: '', threatIntel: '', identity: 'Entra ID',
+    mfa: '', network: '', email: '', configMgmt: '', vulnMgmt: '', cloudProvider: '', forensics: '',
+    ticketing: '', notes: '' } as OrgProfile
+  const mk = (over: Partial<Campaign>): Campaign => ({
+    id: 'c', name: 'x', description: '', scenarioSequence: [], characterIds: [], status: 'draft',
+    currentScenarioIndex: 0, scenarioResults: [], notes: '', createdAt: 1, updatedAt: 1, ...over,
+  })
+
+  check('no campaigns yields a blank profile',
+    orgFieldCount(inheritedOrgProfile([])) === 0)
+  check('inherits from a campaign that has one',
+    inheritedOrgProfile([mk({ orgProfile: profile })]).siem === 'Sentinel')
+  check('prefers the most recently updated campaign',
+    inheritedOrgProfile([
+      mk({ id: 'old', updatedAt: 1, orgProfile: { ...profile, siem: 'Old SIEM' } }),
+      mk({ id: 'new', updatedAt: 99, orgProfile: { ...profile, siem: 'New SIEM' } }),
+    ]).siem === 'New SIEM')
+  check('skips campaigns whose profile is empty',
+    inheritedOrgProfile([
+      mk({ id: 'empty', updatedAt: 99, orgProfile: { ...profile, siem: '', edr: '', identity: '' } }),
+      mk({ id: 'filled', updatedAt: 5, orgProfile: profile }),
+    ]).siem === 'Sentinel')
+  check('a notes-only profile does not count as filled',
+    orgFieldCount(inheritedOrgProfile([
+      mk({ updatedAt: 99, orgProfile: { ...profile, siem: '', edr: '', identity: '', notes: 'just a note' } }),
+    ])) === 0)
+  check('returns a copy, so editing a new campaign cannot mutate the old one', (() => {
+    const source = mk({ orgProfile: profile })
+    const inherited = inheritedOrgProfile([source])
+    inherited.siem = 'MUTATED'
+    return source.orgProfile!.siem === 'Sentinel'
+  })())
 }
 
 console.log(failures === 0 ? '\nCampaign generator verified.\n' : `\n${failures} FAILED\n`)

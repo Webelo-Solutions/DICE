@@ -11,6 +11,7 @@ import { INITIAL_ORG_PROFILE, ORG_PROFILE_CHOICES } from '../types/orgProfile'
 import { Field, SectionTitle, IconBtn, inputCls, labelCls } from '../components/formAtoms'
 import { CriticalInjectIdPicker } from '../components/CriticalInjectIdPicker'
 import { CampaignGeneratorPanel } from '../components/CampaignGeneratorPanel'
+import { generateCampaignName, inheritedOrgProfile } from '../utils/campaignDefaults'
 import { launchCampaignScenario } from '../utils/campaignPlay'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -74,11 +75,11 @@ export function blankScenario(): CustomScenario {
   }
 }
 
-function blankCampaign(): Campaign {
+function blankCampaign(existing: Campaign[] = []): Campaign {
   const now = Date.now()
   return {
     id:                   uid(),
-    name:                 '',
+    name:                 generateCampaignName(existing.map((c) => c.name)),
     description:          '',
     scenarioSequence:     [],
     characterIds:         [],
@@ -86,7 +87,9 @@ function blankCampaign(): Campaign {
     currentScenarioIndex: 0,
     scenarioResults:      [],
     notes:                '',
-    orgProfile:           { ...INITIAL_ORG_PROFILE },
+    // Carried forward rather than blank: a team's stack does not change between
+    // campaigns, and re-typing thirteen fields is why the profile goes unfilled.
+    orgProfile:           inheritedOrgProfile(existing),
     createdAt:            now,
     updatedAt:            now,
   }
@@ -793,7 +796,9 @@ export function CampaignBuilder() {
 
   // ── Campaign handlers ──
   const handleNewCampaign = () => {
-    const blank = blankCampaign()
+    // Seeded from the existing campaigns: a codename that is not already taken,
+    // and the org profile carried forward from the most recent one that has it.
+    const blank = blankCampaign(campaigns)
     setDraftCampaign(blank)
     setIsNewCamp(true)
     setSelectedCampId(null)
