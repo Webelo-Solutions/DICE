@@ -134,10 +134,29 @@ export async function roomRoutes(app: FastifyInstance) {
     return reply.send({ room: toPublicRoom(room), participant: toPublicParticipant(participant), token })
   })
 
-  // ── Lobby info (public by code on a trusted LAN) ────────
-  app.get<{ Params: { code: string } }>('/rooms/:code', async (req, reply) => {
+  // ── Lobby info by code ──────────────────────────────────────────────────────
+  // Stays reachable without an account: the spectator view (/watch/:code) is
+  // deliberately login-free and needs the room's name.
+  //
+  // But a room code is the ONLY thing protecting this, and DICE can now be
+  // hosted on the internet — so an anonymous caller gets the room and nothing
+  // else. The participant list is real people's names, and handing that to
+  // whoever guesses a six-character code is a disclosure that has no upside.
+  // A signed-in DICE user still sees it; that is the bar for learning who is
+  // in a room.
+  //
+  // Rate limited far below the global allowance because this is THE endpoint an
+  // attacker would use to enumerate codes. Legitimate clients call it once per
+  // code they were given; nothing normal comes close to the ceiling.
+  app.get<{ Params: { code: string } }>('/rooms/:code', {
+    preHandler: app.attachUser,
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+  }, async (req, reply) => {
     const room = repository.getRoomByCode(req.params.code.toUpperCase())
     if (!room) return reply.code(404).send({ error: 'Room not found' })
+
+    if (!req.user) return reply.send({ room: toPublicRoom(room) })
+
     const connectedIds = connectedParticipantIds(room.id)
     return reply.send({
       room: toPublicRoom(room),

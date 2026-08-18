@@ -7,6 +7,7 @@ import { useGameStore } from '../store/gameStore'
 import { useUserStore } from '../store/userStore'
 import { useToastStore } from '../store/toastStore'
 import { EmptyState } from '../components/EmptyState'
+import { ROOM_CODE_LENGTH } from '../types/room'
 
 const inputCls = `w-full bg-terminal-surface border border-terminal-border focus:border-terminal-green
   text-white text-sm px-3 py-2.5 rounded focus:outline-none placeholder-terminal-dim transition-colors`
@@ -16,7 +17,10 @@ export function JoinGame() {
   // Pre-fills from the Lobby's QR/join-link (?code=XXXXXX) so scanning it drops
   // a player straight into character selection instead of retyping the room code.
   const [searchParams] = useSearchParams()
-  const [code, setCode] = useState(() => (searchParams.get('code') ?? '').toUpperCase().slice(0, 6))
+  // Room codes are 8 characters; rooms created before that change are 6, and
+  // both must still paste and type cleanly — hence a cap rather than a fixed
+  // length anywhere in this flow.
+  const [code, setCode] = useState(() => (searchParams.get('code') ?? '').toUpperCase().slice(0, ROOM_CODE_LENGTH))
   const [characterId, setCharacterId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const roster    = useGameStore((s) => s.roster)
@@ -52,7 +56,7 @@ export function JoinGame() {
           <div>
             <label className="text-[10px] text-terminal-dim tracking-widest uppercase mb-1 block">Room Code</label>
             <input className={`${inputCls} tracking-[0.4em] text-center text-lg uppercase`} value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())} maxLength={6} placeholder="7KQ9MX" />
+              onChange={(e) => setCode(e.target.value.toUpperCase())} maxLength={ROOM_CODE_LENGTH} placeholder="7KQ9MXBT" />
           </div>
           <div>
             <label className="text-[10px] text-terminal-dim tracking-widest uppercase mb-1.5 block">Choose Your Character</label>

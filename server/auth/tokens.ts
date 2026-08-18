@@ -1,4 +1,5 @@
 import { randomBytes, createHash, scryptSync, timingSafeEqual } from 'node:crypto'
+import { ROOM_CODE_LENGTH } from '../../src/types/room'
 
 // Shared username/password format rules — used by first-run setup, admin user
 // creation, and self-service registration alike.
@@ -22,8 +23,23 @@ export function hashToken(token: string): string {
 
 // Room join codes: short and human-typeable. Alphabet excludes ambiguous
 // characters (no 0/O/1/I).
+//
+// Eight characters, not six. A room code is the ONLY thing standing between a
+// stranger and a live session — the spectator view is deliberately login-free —
+// and DICE can now be hosted on the internet. Six characters of this alphabet
+// is 32^6, about a billion: comfortably safe on a LAN, but only ~30 bits
+// against a distributed guesser with unlimited time. Eight is 32^8, roughly a
+// trillion, which puts enumeration out of reach for good. The cost is two more
+// characters to read aloud, and the lobby's QR and join link carry it anyway.
+//
+// Existing six-character codes keep working: lookup is an exact match and
+// assumes no length.
+//
+// The modulo below is unbiased only because 32 divides 256 exactly. Changing
+// the alphabet to a length that is not a power of two would silently skew
+// codes toward its early characters — use rejection sampling if that happens.
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-export function newRoomCode(length = 6): string {
+export function newRoomCode(length = ROOM_CODE_LENGTH): string {
   const bytes = randomBytes(length)
   let code = ''
   for (let i = 0; i < length; i++) code += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length]

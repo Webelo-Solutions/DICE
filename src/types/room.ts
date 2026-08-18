@@ -5,6 +5,12 @@ import type { Character } from './game'
 export type RoomRole = 'facilitator' | 'player'
 export type RoomStatus = 'lobby' | 'active' | 'ended'
 
+// Length of a newly-generated room code, and the input cap on the join screen.
+// Shared so the generator and the form cannot drift apart. Rooms created before
+// this became 8 have 6-character codes and still work — lookup is an exact
+// match, so nothing assumes a length.
+export const ROOM_CODE_LENGTH = 8
+
 // Public room shape (never exposes the facilitator secret hash).
 export interface Room {
   id:        string

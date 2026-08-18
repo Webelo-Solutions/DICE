@@ -189,7 +189,9 @@ DICE is designed for a single machine or a trusted local network. It CAN be host
 
 **Hosting on the internet: **use the "DICE (Secure Internet Host)" shortcut, after editing it with a domain name that points at your machine and your email address. DICE then obtains a genuine Let's Encrypt certificate, so players see no warning at all, and renews it automatically. You must forward ports 80 and 443 from your router to this machine — port 80 is required for the certificate check and is not optional.
 
-**Before you host publicly: **encryption protects traffic in transit; it does not change who can reach you. Your AI provider key still pays for every DM call anyone triggers, and room codes are short enough to be guessed given enough attempts. Host publicly only for sessions you intend to pay for, use strong passwords, and take the host offline between exercises.
+**Before you host publicly: **encryption protects traffic in transit; it does not change who can reach you. Your AI provider key still pays for every DM call anyone triggers. Host publicly only for sessions you intend to pay for, use strong passwords, and take the host offline between exercises.
+
+**Room codes: **codes are eight characters from an alphabet that leaves out easily-confused letters and digits (no O/0 or I/1), which is about a trillion combinations — not something anyone will guess. DICE also limits how fast the same source can look codes up, and never reveals who is in a room to someone who is not signed in. Joining still needs an account, so a guessed code cannot take a turn or spend your AI credit — but the spectator view is deliberately login-free, so treat a watch link as something worth sharing carefully.
 
 ## 12. Program Analytics (Administrator)
 

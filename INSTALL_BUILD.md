@@ -96,10 +96,29 @@ week after a handful of failures.
 
 **Exposing DICE to the internet remains a deliberate, consequential choice.**
 TLS protects the traffic; it does not change who can reach you. Your API key
-still pays for every DM call anyone triggers, and `GET /api/rooms/:code` is
-unauthenticated by design so a 6-character room code is guessable given enough
-attempts. Host publicly only for sessions you intend to pay for, and take it
-down between exercises.
+still pays for every DM call anyone triggers. Host publicly only for sessions
+you intend to pay for, and take the host down between exercises.
+
+### Room codes
+
+A room code is the only thing protecting a session from a stranger, because the
+spectator view (`/watch/:code`) is deliberately login-free. Three things guard it:
+
+- **8 characters** from a 32-symbol alphabet — 32⁸ ≈ 1.1 × 10¹², a thousand
+  times the old 6-character space. Codes issued before this change are 6
+  characters and still work; lookup is an exact match and assumes no length.
+- **`GET /api/rooms/:code` is rate limited to 20/min per IP**, far below the
+  global 300/min. A real client calls it once per code it was handed.
+- **Anonymous callers get the room and nothing else.** Participant display names
+  are real people's names; they are returned only to a signed-in DICE user.
+
+Joining still requires a DICE account, so a guessed code alone cannot take a
+turn or spend your tokens — but it can still be used to *watch*. If that matters
+for a public session, do not share the watch link, and end rooms you are not
+running.
+
+Verify with `node scripts/verify-room-codes.mjs <port> [ca.crt]` against a
+server that has not yet had its admin created.
 
 Verify a running install with `node scripts/verify-tls.mjs <ca.crt> <port> <httpPort>`.
 

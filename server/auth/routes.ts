@@ -63,6 +63,10 @@ declare module 'fastify' {
   interface FastifyInstance {
     requireAuth:  (req: FastifyRequest, reply: FastifyReply) => Promise<void>
     requireAdmin: (req: FastifyRequest, reply: FastifyReply) => Promise<void>
+    // Resolves `req.user` when a valid token is present and never rejects.
+    // For endpoints that must stay reachable anonymously but should disclose
+    // more to a signed-in caller than to the open internet.
+    attachUser:   (req: FastifyRequest) => Promise<void>
   }
 }
 
@@ -81,6 +85,9 @@ export function setupAuthDecorators(app: FastifyInstance) {
     const user = resolveAuth(bearerFrom(req.headers.authorization))
     if (!user) return reply.code(401).send({ error: 'authentication required' })
     req.user = user
+  })
+  app.decorate('attachUser', async (req: FastifyRequest) => {
+    req.user = resolveAuth(bearerFrom(req.headers.authorization))
   })
   // Same as requireAuth, then a role check. 403 (not 401) for non-admins so
   // the client can distinguish "log in" vs "you don't have permission."

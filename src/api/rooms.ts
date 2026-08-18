@@ -37,8 +37,11 @@ export const roomApi = {
       method: 'POST', headers: { authorization: `Bearer ${userToken}` }, body: JSON.stringify({ passphrase, displayName }),
     }),
 
-  getLobby: (code: string) =>
-    req<{ room: Room; participants: Participant[] }>(`/rooms/${encodeURIComponent(code)}`),
+  // `participants` is omitted for anonymous callers — a room code alone must not
+  // disclose who is in the room. Pass a signed-in user's token to receive it.
+  getLobby: (code: string, userToken?: string) =>
+    req<{ room: Room; participants?: Participant[] }>(`/rooms/${encodeURIComponent(code)}`,
+      userToken ? { headers: { authorization: `Bearer ${userToken}` } } : undefined),
 
   // Writes session-earned XP back to each player's own persisted character
   // (facilitator-only; uses the room participant token like /action, /dm).
