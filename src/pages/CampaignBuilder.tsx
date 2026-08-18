@@ -10,6 +10,7 @@ import type { OrgProfile } from '../types/orgProfile'
 import { INITIAL_ORG_PROFILE, ORG_PROFILE_CHOICES } from '../types/orgProfile'
 import { Field, SectionTitle, IconBtn, inputCls, labelCls } from '../components/formAtoms'
 import { CriticalInjectIdPicker } from '../components/CriticalInjectIdPicker'
+import { CampaignGeneratorPanel } from '../components/CampaignGeneratorPanel'
 import { launchCampaignScenario } from '../utils/campaignPlay'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -448,6 +449,7 @@ interface CEProps {
 function CampaignEditorForm({ initial, onSave, onDelete, onPlay, isNew }: CEProps) {
   const [camp, setCamp] = useState<Campaign>(initial)
   const [orgProfileOpen, setOrgProfileOpen] = useState(false)
+  const [generatorOpen, setGeneratorOpen] = useState(false)
   const roster          = useGameStore((s) => s.roster)
   const { customScenarios } = useCampaignStore()
   const allScenarios    = [...ALL_SCENARIOS, ...customScenarios]
@@ -621,7 +623,40 @@ function CampaignEditorForm({ initial, onSave, onDelete, onPlay, isNew }: CEProp
 
       {/* ── Scenario Sequence ── */}
       <div>
-        <SectionTitle>Scenario Sequence</SectionTitle>
+        <div className="flex items-baseline justify-between mb-4">
+          <SectionTitle>Scenario Sequence</SectionTitle>
+          {!generatorOpen && (
+            <button type="button" onClick={() => setGeneratorOpen(true)}
+              className="text-[10px] text-terminal-green hover:text-white border border-terminal-green/30
+                hover:border-terminal-green px-2 py-1 rounded transition-colors">
+              ⚄ Generate for me
+            </button>
+          )}
+        </div>
+
+        {/* The generator replaces the picker while open — reviewing a proposed
+            sequence and hand-picking at the same time only invites confusion
+            about which list is the real one. Applying REPLACES the sequence, so
+            it is offered on a campaign that already has scenarios only after an
+            explicit confirmation below. */}
+        {generatorOpen && (
+          <div className="mb-4 rounded border border-terminal-green/30 bg-terminal-green/5 p-4">
+            <CampaignGeneratorPanel
+              onCancel={() => setGeneratorOpen(false)}
+              onApply={(ids) => {
+                if (camp.scenarioSequence.length > 0 &&
+                    !window.confirm(`Replace the current ${camp.scenarioSequence.length}-scenario sequence with the generated one?`)) return
+                setField('scenarioSequence', ids)
+                // A regenerated campaign is a new plan: leaving progress behind
+                // would point currentScenarioIndex at a scenario that is no
+                // longer in the sequence.
+                setField('currentScenarioIndex', 0)
+                setField('scenarioResults', [])
+                setGeneratorOpen(false)
+              }}
+            />
+          </div>
+        )}
 
         {/* Ordered list of selected scenarios */}
         {camp.scenarioSequence.length > 0 && (
