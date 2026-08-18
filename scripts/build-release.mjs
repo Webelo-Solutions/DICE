@@ -35,6 +35,11 @@ const PROD_DEPS = {
   '@anthropic-ai/sdk': '^0.39.0',
   'openai': '^6.38.0',
   '@google/generative-ai': '^0.24.1',
+  // TLS. DICE serves HTTPS by default and generates its own certificate on
+  // first run (selfsigned); acme-client obtains a publicly-trusted one when a
+  // host configures a domain. Both are pure JS — no native build step.
+  'selfsigned': '^5.5.0',
+  'acme-client': '^5.4.0',
 }
 
 const run = (cmd, cwd = root) => execSync(cmd, { cwd, stdio: 'inherit' })
@@ -62,6 +67,7 @@ cpSync(resolve(root, 'dist'), resolve(releaseApp, 'dist'), { recursive: true })
 cpSync(resolve(root, 'server', 'db', 'migrations'), resolve(releaseApp, 'server', 'migrations'), { recursive: true })
 cpSync(resolve(root, 'installer', 'DICE.cmd'), resolve(releaseApp, 'DICE.cmd'))
 cpSync(resolve(root, 'installer', 'DICE-LAN.cmd'), resolve(releaseApp, 'DICE-LAN.cmd'))
+cpSync(resolve(root, 'installer', 'DICE-Internet.cmd'), resolve(releaseApp, 'DICE-Internet.cmd'))
 const icoSrc = resolve(root, 'installer', 'dice.ico')
 if (existsSync(icoSrc)) {
   cpSync(icoSrc, resolve(releaseApp, 'dice.ico'))

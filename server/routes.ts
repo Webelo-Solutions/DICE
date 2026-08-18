@@ -1,5 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { networkInterfaces } from 'node:os'
+import { resolveTlsConfig } from './tls/config'
+import { readCaCertPem } from './tls/selfSigned'
 import { repository } from './db/sqlite-repository'
 import type { Character } from '../src/types/game'
 import type { Campaign, CustomScenario, SaveSlot } from '../src/types/campaign'
@@ -43,12 +45,28 @@ export async function apiRoutes(app: FastifyInstance) {
   // Only surfaces non-internal IPv4s; a host on multiple networks (e.g. Wi-Fi +
   // a VPN adapter) gets every candidate back and the client picks the first.
   app.get('/network-info', async () => ({
-    port: Number(process.env.PORT ?? 3001),
+    // Resolved through the TLS config rather than read straight from PORT: the
+    // default differs by mode (443 for Let's Encrypt, 3001 otherwise), so a
+    // hard-coded fallback here would hand players a link to the wrong port.
+    port: resolveTlsConfig().httpsPort,
     addresses: Object.values(networkInterfaces())
       .flatMap((iface) => iface ?? [])
       .filter((i) => i.family === 'IPv4' && !i.internal)
       .map((i) => i.address),
   }))
+
+  // The self-signed CA, so a facilitator can hand it to players (or IT) and
+  // have the certificate warning disappear for good instead of teaching a room
+  // full of people to click through it. 404s when the certificate is publicly
+  // trusted or TLS is off, because there is then nothing to install.
+  app.get('/tls-ca', async (_req, reply) => {
+    const pem = readCaCertPem()
+    if (!pem) return reply.code(404).send({ error: 'No local certificate authority — nothing to trust' })
+    return reply
+      .header('content-type', 'application/x-x509-ca-cert')
+      .header('content-disposition', 'attachment; filename="dice-ca.crt"')
+      .send(pem)
+  })
 
   // Bundled preHandler — short-circuits with 401 if no valid session.
   const auth = { preHandler: app.requireAuth }

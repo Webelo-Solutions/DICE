@@ -45,12 +45,20 @@ export function Lobby() {
     return () => { cancelled = true }
   }, [membership?.code, membership?.role])
 
-  const joinUrl = selectedAddress && port && membership
-    ? `http://${selectedAddress}:${port}/join?code=${membership.code}`
-    : null
-  const watchUrl = selectedAddress && port && membership
-    ? `http://${selectedAddress}:${port}/watch/${membership.code}`
-    : null
+  // Match the scheme this page was served over. DICE serves HTTPS by default,
+  // and a hard-coded http:// link would send players to the redirect listener
+  // at best and nowhere at all when it could not bind port 80. The port is
+  // omitted when it is the default for the scheme, so a Let's Encrypt host
+  // shares a clean https://dice.example.com/join?... instead of :443.
+  const scheme     = window.location.protocol === 'https:' ? 'https' : 'http'
+  const defaultPort = scheme === 'https' ? 443 : 80
+  const portSuffix = port && port !== defaultPort ? `:${port}` : ''
+  // `port` must have arrived before a link is built — without it the suffix
+  // would be empty and the link would silently imply the scheme's default port.
+  const origin     = selectedAddress && port ? `${scheme}://${selectedAddress}${portSuffix}` : null
+
+  const joinUrl = origin && membership ? `${origin}/join?code=${membership.code}` : null
+  const watchUrl = origin && membership ? `${origin}/watch/${membership.code}` : null
 
   useEffect(() => {
     if (!joinUrl) { setQrDataUrl(null); return }

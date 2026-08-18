@@ -1,4 +1,5 @@
 import Fastify from 'fastify'
+import type { FastifyServerOptions } from 'fastify'
 import fastifyStatic from '@fastify/static'
 import fastifyWebsocket from '@fastify/websocket'
 import fastifyHelmet from '@fastify/helmet'
@@ -14,8 +15,33 @@ import { adminRoutes } from './auth/admin-routes'
 const here = dirname(fileURLToPath(import.meta.url))
 const DIST_DIR = resolve(here, '../dist')
 
-export function buildApp() {
-  const app = Fastify({ logger: true })
+export interface BuildAppOptions {
+  /** PEM key/cert. Present = serve HTTPS; absent = plain HTTP. */
+  https?: { key: string; cert: string }
+  /**
+   * Send Strict-Transport-Security.
+   *
+   * ONLY safe with a publicly-trusted certificate. HSTS makes certificate
+   * errors non-bypassable — with a self-signed certificate the browser would
+   * show an interstitial with no "Proceed anyway", locking every participant
+   * out of the exercise with no way back short of clearing HSTS state.
+   */
+  hsts?: boolean
+}
+
+export function buildApp(opts: BuildAppOptions = {}) {
+  // Built as one options object rather than two Fastify() calls: calling the
+  // https overload conditionally yields a UNION of two instance types, and
+  // every subsequent app.register() then fails to resolve a common signature.
+  // Fastify serves TLS from this shape at runtime regardless; only the static
+  // type of `app.server` differs, which index.ts narrows where it needs to.
+  const serverOptions: FastifyServerOptions = { logger: true }
+  if (opts.https) {
+    (serverOptions as FastifyServerOptions & { https: { key: string; cert: string } }).https = {
+      key: opts.https.key, cert: opts.https.cert,
+    }
+  }
+  const app = Fastify(serverOptions)
 
   // Treat an empty application/json body as `undefined` instead of throwing
   // FST_ERR_CTP_EMPTY_JSON_BODY. Idiomatic clients send POST .../logout with
@@ -53,6 +79,10 @@ export function buildApp() {
     },
     // Embedder policy can break cross-origin font/resource loads; not needed here.
     crossOriginEmbedderPolicy: false,
+    // See BuildAppOptions.hsts — off unless the certificate is publicly trusted.
+    // Six months, no preload: preload is a one-way door for a domain, and this
+    // is a self-hosted app whose operator may later want plain HTTP back.
+    hsts: opts.hsts ? { maxAge: 15_552_000, includeSubDomains: false, preload: false } : false,
   })
 
   // Blunt brute-forcing of room codes / facilitator passphrases. Generous enough

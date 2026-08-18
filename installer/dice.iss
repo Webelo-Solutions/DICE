@@ -52,6 +52,10 @@ Source: "..\release\app\*"; DestDir: "{app}"; Flags: recursesubdirs createallsub
 Name: "{group}\{#AppName}";        Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; IconFilename: "{app}\dice.ico"
 ; LAN host: same app, but reachable by other devices on a trusted local network.
 Name: "{group}\{#AppName} (LAN Host)"; Filename: "{app}\DICE-LAN.cmd"; WorkingDir: "{app}"; IconFilename: "{app}\dice.ico"
+; Public internet host: Let's Encrypt certificate for a real domain. Requires
+; editing DICE-Internet.cmd first — it refuses to start on the placeholder
+; domain rather than failing obscurely against the ACME rate limits.
+Name: "{group}\{#AppName} (Secure Internet Host)"; Filename: "{app}\DICE-Internet.cmd"; WorkingDir: "{app}"; IconFilename: "{app}\dice.ico"
 Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 Name: "{userdesktop}\{#AppName}";  Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; IconFilename: "{app}\dice.ico"; Tasks: desktopicon
 

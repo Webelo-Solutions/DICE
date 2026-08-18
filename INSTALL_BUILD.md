@@ -8,7 +8,7 @@ the end user (Node is bundled).
 
 - Installs per-user to `%LOCALAPPDATA%\Programs\DICE` (no admin prompt).
 - Creates a **DICE** Start Menu shortcut (and optional desktop shortcut).
-- Launching it starts the bundled local server and opens `http://127.0.0.1:3001`
+- Launching it starts the bundled local server and opens `https://127.0.0.1:3001`
   in the default browser. A small titled **"DICE Server"** window appears
   (minimized) — closing it stops DICE.
 - The database is created at `%LOCALAPPDATA%\DICE\dice.db` on first run and is
@@ -34,7 +34,8 @@ otherwise anonymous users could run up the host's token bill.
 - **To allow other devices on a trusted LAN (installed app):** launch via the
   **"DICE (LAN Host)"** Start Menu shortcut, which sets `DICE_LAN=1` so the server
   binds `0.0.0.0` (the normal shortcut stays localhost-only). The browser still
-  opens at `127.0.0.1`. Players open `http://<host-LAN-IP>:3001`. Windows Firewall
+  opens at `127.0.0.1`. Players open `https://<host-LAN-IP>:3001` (the lobby's
+  QR code and join link now carry the right scheme automatically). Windows Firewall
   may prompt to allow Node on **Private** networks the first time — allow it (or add
   a rule manually, below).
 - **Running from source (dev):** set `HOST=0.0.0.0` before `npm run server`. If
@@ -45,9 +46,62 @@ otherwise anonymous users could run up the host's token bill.
 - **Never** port-forward port 3001, run DICE on untrusted/guest Wi-Fi, or otherwise
   make it reachable from the internet.
 
-Because it is confined to a trusted LAN, DICE uses plain HTTP (no TLS) — HTTPS/WSS
-is intentionally not used. If you ever need to run it on an untrusted network, that
-decision must be revisited (it would require TLS and authentication changes).
+## Transport security (TLS)
+
+DICE serves **HTTPS by default**. On first run it generates a local certificate
+authority and a server certificate into `%LOCALAPPDATA%\DICE\certs\`, covering
+`localhost`, the machine name, and every non-loopback IPv4 address the host has.
+Nothing needs configuring, and WebSockets follow automatically (`wss://`).
+
+Because that CA signs itself, browsers warn until it is trusted. Two ways out:
+
+- **Trust it once per device.** DICE prints the path at startup and serves the
+  CA at `/api/tls-ca`. Import it into *Trusted Root Certification Authorities*
+  (or push it by GPO). Because a long-lived CA signs short-lived server
+  certificates, this survives certificate rotation — you do not re-import.
+- **Click through.** Acceptable for a one-off, but a security exercise that
+  trains twenty people to dismiss certificate warnings is teaching the wrong
+  reflex. `Strict-Transport-Security` is deliberately **not** sent for
+  self-signed certificates precisely so this remains possible — with HSTS the
+  browser offers no "Proceed" at all.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `DICE_TLS` | `self-signed` | `self-signed`, `letsencrypt`, or `off` |
+| `PORT` | `3001` (`443` for Let's Encrypt) | HTTPS listen port |
+| `DICE_HTTP_PORT` | `80` | Redirect + ACME listener; `off` to disable |
+| `DICE_DOMAIN` | — | Public domain; required for Let's Encrypt |
+| `DICE_ACME_EMAIL` | — | Contact for expiry warnings |
+| `DICE_ACME_STAGING` | — | `1` to use the staging CA while testing |
+
+Port 80 redirects to HTTPS and preserves the path, so a shared join link still
+works if someone types `http://`. A failed bind on 80 is tolerated for
+self-signed use (desktops often have it taken) — HTTPS still serves.
+
+### Public internet hosting (Let's Encrypt)
+
+Use the **"DICE (Secure Internet Host)"** shortcut, after editing
+`DICE-Internet.cmd` with your domain and email. It requires:
+
+1. A DNS A record pointing at this machine's public IP.
+2. Inbound TCP **80 and 443** forwarded to this machine. Port 80 is not
+   optional — HTTP-01 validation connects to it.
+3. Nothing else listening on either port.
+
+Certificates renew automatically (checked twice daily, renewed 30 days out) and
+are applied without dropping anyone mid-session. A failed renewal falls back to
+a self-signed certificate rather than refusing to start. Test with
+`DICE_ACME_STAGING=1` first: the production service rate-limits a domain for a
+week after a handful of failures.
+
+**Exposing DICE to the internet remains a deliberate, consequential choice.**
+TLS protects the traffic; it does not change who can reach you. Your API key
+still pays for every DM call anyone triggers, and `GET /api/rooms/:code` is
+unauthenticated by design so a 6-character room code is guessable given enough
+attempts. Host publicly only for sessions you intend to pay for, and take it
+down between exercises.
+
+Verify a running install with `node scripts/verify-tls.mjs <ca.crt> <port> <httpPort>`.
 
 ## Prerequisites (build machine only)
 
@@ -104,8 +158,10 @@ Remove-Item "$env:LOCALAPPDATA\DICE" -Recurse -Force
 | Path | Role |
 |---|---|
 | `scripts/build-release.mjs` | Assembles `release/app` (SPA + server bundle + deps + node.exe + launcher) |
-| `installer/DICE.cmd` | Launcher: sets data path, starts server (localhost), opens browser |
+| `installer/DICE.cmd` | Launcher: sets data path + TLS defaults, starts server (localhost), opens browser |
 | `installer/DICE-LAN.cmd` | LAN host launcher: sets `DICE_LAN=1` (binds `0.0.0.0`), then calls `DICE.cmd` |
+| `installer/DICE-Internet.cmd` | Public host launcher: Let's Encrypt for a real domain; refuses to start on the placeholder |
+| `server/tls/` | Certificate generation (`selfSigned.ts`), ACME (`acme.ts`), storage (`store.ts`), redirect listener (`httpRedirect.ts`) |
 | `installer/dice.iss` | Inno Setup definition → `DICE-Setup.exe` |
 | `release/app/` | The exact files the installer ships |
 

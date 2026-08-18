@@ -16,7 +16,7 @@ _Defensive Incident Containment Exercises_
 - [8. Self-Registration (Invite Code)](#8-self-registration-invite-code)
 - [9. Signing In and Account Settings](#9-signing-in-and-account-settings)
 - [10. Where Your Data Lives](#10-where-your-data-lives)
-- [11. Network & Hosting — Trusted LAN Only](#11-network-hosting-trusted-lan-only)
+- [11. Network, Hosting & Encryption](#11-network-hosting-encryption)
 - [12. Program Analytics (Administrator)](#12-program-analytics-administrator)
 - [13. Injects Catalog (Administrator)](#13-injects-catalog-administrator)
 - [14. Scenario Authoring (Administrator)](#14-scenario-authoring-administrator)
@@ -175,9 +175,9 @@ All DICE data — every user's data combined — lives in a single database file
 
 **Your API key: **kept separately in your browser's local storage (not in the database), so it is never included in a database backup. Each person's browser holds their own key.
 
-## 11. Network & Hosting — Trusted LAN Only
+## 11. Network, Hosting & Encryption
 
-DICE runs on a single machine or a trusted local network and must NOT be exposed to the internet. The host's AI provider key pays for every DM call, so access is intentionally limited to people on a network you control — otherwise unknown users could run up the host's costs. Sign-in protects against casual access; it does not make the app safe to expose publicly.
+DICE is designed for a single machine or a trusted local network. It CAN be hosted on the internet (see below), but that is a deliberate decision with real cost and exposure consequences, not the default. The host's AI provider key pays for every DM call, so access is intentionally limited to people on a network you control — otherwise unknown users could run up the host's costs. Sign-in protects against casual access; it does not make the app safe to expose publicly.
 
 **Default — localhost only: **out of the box the app is reachable only on the host computer.
 
@@ -185,7 +185,11 @@ DICE runs on a single machine or a trusted local network and must NOT be exposed
 
 **Join links & QR codes: **when hosting a multiplayer room (Section 25), the Lobby screen detects the host's LAN address and shows two QR codes so players can scan instead of typing an IP address: a Join link (opens Join Game with the room code pre-filled) and a Watch link (opens the read-only spectator view). The room code is still shown in plain text as a manual fallback.
 
-**Never expose to the internet: **do not port-forward the app or otherwise make it reachable from outside your local network.
+**Encryption (HTTPS): **DICE serves HTTPS by default and creates its own certificate the first time it runs — there is nothing to set up. Because that certificate is issued by DICE itself rather than a public authority, browsers show a "not private" warning the first time each device connects. You can click through it, but the better answer is to trust it once: DICE prints the certificate file location when it starts, and it is available for download from the app. Import that one file into "Trusted Root Certification Authorities" on each device (or have IT push it) and the warning stops for good, including after DICE renews its certificate.
+
+**Hosting on the internet: **use the "DICE (Secure Internet Host)" shortcut, after editing it with a domain name that points at your machine and your email address. DICE then obtains a genuine Let's Encrypt certificate, so players see no warning at all, and renews it automatically. You must forward ports 80 and 443 from your router to this machine — port 80 is required for the certificate check and is not optional.
+
+**Before you host publicly: **encryption protects traffic in transit; it does not change who can reach you. Your AI provider key still pays for every DM call anyone triggers, and room codes are short enough to be guessed given enough attempts. Host publicly only for sessions you intend to pay for, use strong passwords, and take the host offline between exercises.
 
 ## 12. Program Analytics (Administrator)
 
