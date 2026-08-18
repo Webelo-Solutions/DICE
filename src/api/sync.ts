@@ -2,6 +2,7 @@ import { api } from './client'
 import { useGameStore } from '../store/gameStore'
 import { useCampaignStore } from '../store/campaignStore'
 import { useRoomStore } from '../store/roomStore'
+import { useToastStore } from '../store/toastStore'
 import { useInjectsCatalogStore } from '../store/injectsCatalogStore'
 import { INITIAL_ORG_STATE, normalizeNpcReputation } from '../types/orgState'
 
@@ -16,6 +17,18 @@ const KV_RESULT            = 'result'
 const KV_CAMPAIGN_CONTEXT  = 'campaignContext'
 
 const logErr = (e: unknown) => console.error('[api-sync]', e)
+
+// The session record is the durable artefact behind the after-action report and
+// every export. When its write fails the record still sits in the local store,
+// so the history list looks right and the loss only reveals itself later as an
+// export claiming the session does not exist. Say so at the time instead.
+const recordFailed = (e: unknown) => {
+  logErr(e)
+  useToastStore.getState().push(
+    'This session could not be saved to the server — its report and exports will be unavailable.',
+    'error',
+  )
+}
 
 // ─── Hydration ────────────────────────────────────────────────────────────────
 // Load everything from the API into the stores before the app renders. Runs
@@ -136,9 +149,15 @@ export function startApiSync(): () => void {
       if (state.sessionHistory.length === 0 && prev.sessionHistory.length > 0) {
         api.clearSessionHistory().catch(logErr)
       } else {
-        const prevIds = new Set(prev.sessionHistory.map((r) => r.id))
+        // Diff by reference, not by id: a record can be rewritten after it is
+        // first stored — a departmental session records immediately and then
+        // enriches with the per-person report once the ledger arrives. Keying
+        // on "id is new" skipped that second write, so the server kept the
+        // unenriched copy and the exported report lost its departmental
+        // section. recordSession upserts, so re-posting is safe.
+        const prevById = new Map(prev.sessionHistory.map((r) => [r.id, r]))
         for (const rec of state.sessionHistory) {
-          if (!prevIds.has(rec.id)) api.recordSession(rec).catch(logErr)
+          if (prevById.get(rec.id) !== rec) api.recordSession(rec).catch(recordFailed)
         }
       }
     }

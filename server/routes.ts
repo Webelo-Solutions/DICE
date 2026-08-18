@@ -19,6 +19,14 @@ interface KeyParam { key: string }
 // Pack files can carry base64 headshots; allow well above the default 1 MB.
 const PACK_IMPORT_BODY_LIMIT = 12 * 1024 * 1024
 
+// A session record carries its whole feed, and the live-state kv writes carry
+// that same feed every few turns. A long exercise — especially a departmental
+// one, where every participant's turn is narrated — runs past Fastify's 1 MB
+// default and the write 413s. Nothing surfaces at the time: the failure only
+// shows up later as an export insisting the session does not exist. Keep the
+// ceiling well above anything a real session can produce.
+const SESSION_STATE_BODY_LIMIT = 16 * 1024 * 1024
+
 // Listing payload omits the heavy `data` snapshot (kept server-side for re-enable).
 function packSummary(row: ContentPackRow) {
   return {
@@ -156,7 +164,7 @@ export async function apiRoutes(app: FastifyInstance) {
 
   // ── Session history (user-scoped) ───────────────────────
   app.get('/session-history', auth, async (req) => repository.listSessionHistory(uid(req)))
-  app.post<{ Body: SessionRecord }>('/session-history', auth, async (req, reply) => {
+  app.post<{ Body: SessionRecord }>('/session-history', { ...auth, bodyLimit: SESSION_STATE_BODY_LIMIT }, async (req, reply) => {
     if (!req.body?.id) return reply.code(400).send({ error: 'session record requires an id' })
     repository.recordSession(req.body, uid(req))
     return req.body
@@ -229,7 +237,7 @@ export async function apiRoutes(app: FastifyInstance) {
   const userKv = (req: { user: { id: string } | null; params: { key: string } }) =>
     `user:${req.user!.id}:${req.params.key}`
   app.get<{ Params: KeyParam }>('/kv/:key', auth, async (req) => repository.getKv(userKv(req)))
-  app.put<{ Params: KeyParam }>('/kv/:key', auth, async (req) => {
+  app.put<{ Params: KeyParam }>('/kv/:key', { ...auth, bodyLimit: SESSION_STATE_BODY_LIMIT }, async (req) => {
     repository.setKv(userKv(req), req.body)
     return req.body
   })
