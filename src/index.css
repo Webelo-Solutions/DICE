@@ -49,6 +49,15 @@
     caret-color: #4ade80;
   }
 
+  /* Native <select> popups inherit the control's colours, which renders the
+     options white-on-white wherever the select is transparent. Pin every
+     dropdown list to one light palette so they all read the same. */
+  select option,
+  select optgroup {
+    background-color: #ffffff;
+    color: #0d1117;
+  }
+
   /* Selection highlight */
   ::selection {
     background-color: rgba(74, 222, 128, 0.2);
