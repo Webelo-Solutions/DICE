@@ -8,7 +8,13 @@ import * as schema from './schema'
 // DB file location: DICE_DB_PATH env (a filesystem path) or a default under
 // ./data. A dedicated var (not the generic DATABASE_URL, which is conventionally
 // a connection URL and may be set for other services) keeps this unambiguous.
-// SQLite is a single file — backup is a file copy.
+//
+// BACKUP: this is NOT a single file while the server is running. WAL mode is
+// enabled below, so committed-but-uncheckpointed data lives in a sibling
+// `<db>-wal` — which routinely holds far more than the .db itself. Copying the
+// .db alone from a live install silently yields a stale database that still
+// opens cleanly, which is the worst possible failure shape. Either stop the
+// server first, or copy `<db>`, `<db>-wal` and `<db>-shm` together.
 const DEFAULT_PATH = resolve(dirname(fileURLToPath(import.meta.url)), '../../data/dice.db')
 const dbPath = process.env.DICE_DB_PATH ?? DEFAULT_PATH
 

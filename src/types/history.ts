@@ -1,4 +1,5 @@
 import type { SessionResult, LearningPathItem, LearningPriority, FeedEntry } from './game'
+import type { DepartmentalReport } from './report'
 
 export interface SessionRecord {
   id:            string
@@ -15,6 +16,12 @@ export interface SessionRecord {
   // after-action reports and exports can include the timeline later, not just
   // the summary. Optional: records written before this field existed have none.
   feed?:         FeedEntry[]
+  // Per-person contribution and bench-depth findings. Present only for
+  // departmental sessions — a standard session reports on six characters, not
+  // on twenty people, and has nothing to put here. Built at session end
+  // because it needs the server-side event ledger, which the client cannot
+  // reconstruct afterwards.
+  departmental?: DepartmentalReport
 }
 
 export interface GapFrequency {

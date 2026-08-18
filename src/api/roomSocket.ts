@@ -1,7 +1,7 @@
 import { useGameStore } from '../store/gameStore'
 import { useRoomStore } from '../store/roomStore'
 import type { GameSession, FeedEntry } from '../types/game'
-import type { Participant } from '../types/room'
+import type { Participant, Department, Suggestion, RoomMode } from '../types/room'
 
 // Connects to a room's real-time channel and applies server broadcasts to the
 // stores. Live session/feed updates flow into the gameStore; lobby updates into
@@ -16,14 +16,18 @@ let intentionalClose = false
 let facilitatorAppliedSnapshot = false
 
 interface ServerMessage {
-  type:    'session' | 'lobby' | 'action' | 'dm_stream' | 'error'
+  type:    'session' | 'lobby' | 'action' | 'dm_stream' | 'suggestion' | 'error'
+  suggestion?: Suggestion
   session?: GameSession | null
   feed?:    FeedEntry[]
   participants?: Participant[]
+  departments?:  Department[]
+  mode?:         RoomMode
   // action relay
-  text?:        string
-  characterId?: string
-  displayName?: string
+  text?:          string
+  characterId?:   string
+  displayName?:   string
+  participantId?: string
   // dm_stream
   narration?:   string
   error?:   string
@@ -54,9 +58,20 @@ export function connectRoom(code: string, token: string): void {
     try { msg = JSON.parse(event.data) } catch { return }
     if (msg.type === 'session') {
       const role = useRoomStore.getState().membership?.role
-      // Players always render the synced state. The facilitator only takes the
-      // initial snapshot (restore on reconnect), then drives locally.
-      if (role === 'player') {
+      // Everyone who is NOT the facilitator renders the synced state — that
+      // includes department leads, who are players with extra lobby powers and
+      // no authority over the session. Testing for 'player' by name would leave
+      // a dept_lead frozen on whatever state they held when they were promoted.
+      // The facilitator only takes the initial snapshot (restore on reconnect),
+      // then drives locally.
+      // Advice belongs to the decision it was given for. When the turn moves to
+      // someone else, drop it rather than showing the next actor a list of
+      // suggestions written for the last one.
+      const prevActor = useGameStore.getState().session?.currentActor?.participantId
+      const nextActor = msg.session?.currentActor?.participantId
+      if (prevActor !== nextActor) useRoomStore.getState().clearSuggestions()
+
+      if (role && role !== 'facilitator') {
         useGameStore.setState({ session: msg.session ?? null, feed: msg.feed ?? [] })
       } else if (!facilitatorAppliedSnapshot) {
         useGameStore.setState({ session: msg.session ?? null, feed: msg.feed ?? [] })
@@ -64,15 +79,35 @@ export function connectRoom(code: string, token: string): void {
       }
       // The final narration is now in the feed — clear the live streaming preview.
       useRoomStore.getState().clearStreamingNarration()
+    } else if (msg.type === 'suggestion') {
+      // Broadcast to the whole room, not just the actor — teammates seeing what
+      // has already been said is what stops five people suggesting the same
+      // thing, and the facilitator needs it to judge the room's thinking.
+      if (msg.suggestion) useRoomStore.getState().addSuggestion(msg.suggestion)
     } else if (msg.type === 'dm_stream') {
       useRoomStore.getState().setStreamingNarration(msg.narration ?? '')
     } else if (msg.type === 'lobby') {
       useRoomStore.getState().setParticipants(msg.participants ?? [])
+      useRoomStore.getState().setDepartments(msg.departments ?? [])
+      // The server owns the room role: a facilitator promoting someone to
+      // department lead has to reach that client's own membership, or they
+      // keep rendering the plain player view until they refresh.
+      const state = useRoomStore.getState()
+      const me = msg.participants?.find((p) => p.id === state.membership?.participantId)
+      const mode = msg.mode ?? state.membership?.mode
+      if (state.membership && (
+        (me && me.role !== state.membership.role) || mode !== state.membership.mode
+      )) {
+        state.setMembership({ ...state.membership, role: me?.role ?? state.membership.role, mode })
+      }
     } else if (msg.type === 'action') {
       // A player's turn action, relayed by the server. Only the facilitator's
       // client processes it (it runs the game engine).
       if (useRoomStore.getState().membership?.role === 'facilitator' && msg.text && msg.characterId) {
-        useRoomStore.getState().setIncomingAction({ text: msg.text, characterId: msg.characterId, displayName: msg.displayName ?? '' })
+        useRoomStore.getState().setIncomingAction({
+          text: msg.text, characterId: msg.characterId,
+          displayName: msg.displayName ?? '', participantId: msg.participantId ?? '',
+        })
       }
     } else if (msg.type === 'error') {
       // Token rejected by the server — drop membership and stop reconnecting.

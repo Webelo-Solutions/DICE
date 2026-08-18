@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGameStore } from '../store/gameStore'
-import { useRoomStore } from '../store/roomStore'
+import { useRoomStore, roomMode } from '../store/roomStore'
 import { roomApi } from '../api/rooms'
+import { buildDepartmentalLineup } from '../utils/departmentalSession'
 import { CharacterCard } from '../components/CharacterCard'
 import { Tooltip } from '../components/Tooltip'
 import { LevelUpModal } from '../components/LevelUpModal'
-import type { TimerDifficulty } from '../types/game'
+import type { TimerDifficulty, DeliberationScope } from '../types/game'
 import { TIMER_DIFFICULTY_SECONDS } from '../types/game'
 
 const MODE_INFO = {
@@ -47,6 +48,10 @@ export function RosterPage() {
   // Characters that leveled up during a room-hosted session get their upgrade
   // choice deferred here (room players don't get a live SessionEnd screen).
   const [levelUpTargetId, setLevelUpTargetId] = useState<string | null>(null)
+  // Departmental launch options. Deliberation defaults on and scoped to the
+  // acting role — see the launch panel below for why.
+  const [deliberationOn,    setDeliberationOn]    = useState(true)
+  const [deliberationScope, setDeliberationScope] = useState<DeliberationScope>('role')
   const selectedScenario = useGameStore((s) => s.session?.scenario ?? null)
 
   // Copy a library (pack-imported) character into the roster as a user-owned
@@ -93,9 +98,15 @@ export function RosterPage() {
   const membership = useRoomStore((s) => s.membership)
   const roomParticipants = useRoomStore((s) => s.participants)
   const isRoomFacilitator = membership?.role === 'facilitator'
-  const roomPlayers = roomParticipants
-    .filter((p) => p.role === 'player' && p.character)
-    .map((p) => p.character!)
+  const isDepartmental = roomMode(membership) === 'departmental'
+  // Departmental sessions seat everyone who picked a role — including people
+  // who brought no character (they get the role baseline) and department leads,
+  // who are players with extra lobby powers. Testing for role === 'player' and
+  // a present character, as standard mode does, would silently bench both.
+  const lineup = isDepartmental ? buildDepartmentalLineup(roomParticipants) : null
+  const roomPlayers = isDepartmental
+    ? lineup!.players
+    : roomParticipants.filter((p) => p.role === 'player' && p.character).map((p) => p.character!)
 
   if (isRoomFacilitator) {
     const launchRoom = () => {
@@ -103,7 +114,12 @@ export function RosterPage() {
       // Hand the AI key to the server (held in memory) so the DM runs server-side.
       const cfg = useGameStore.getState().providerConfig
       if (cfg) roomApi.setDmProvider(membership.code, membership.token, cfg).catch((e) => console.error('[dm-provider]', e))
-      initSession(selectedScenario, roomPlayers, roomPlayers.length > 1 ? 'team' : 'solo', difficulty)
+      if (isDepartmental) {
+        initSession(selectedScenario, roomPlayers, 'departmental', difficulty, undefined, undefined,
+          lineup!.seats, { enabled: deliberationOn, scope: deliberationScope })
+      } else {
+        initSession(selectedScenario, roomPlayers, roomPlayers.length > 1 ? 'team' : 'solo', difficulty)
+      }
       navigate('/game')
     }
     return (
@@ -147,6 +163,47 @@ export function RosterPage() {
               ))}
             </div>
           </div>
+
+          {/* Deliberation. With six turns a round, most people are watching most
+              of the time — this is what they do instead, so it defaults on. */}
+          {isDepartmental && (
+            <div className="mb-5">
+              <div className="text-xs text-terminal-dim tracking-widest uppercase mb-3">Deliberation</div>
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                {([
+                  { on: true,  label: 'On',  desc: 'Teammates advise whoever is acting' },
+                  { on: false, label: 'Off', desc: 'Individuals act unaided' },
+                ]).map((opt) => (
+                  <button key={String(opt.on)} onClick={() => setDeliberationOn(opt.on)}
+                    aria-pressed={deliberationOn === opt.on}
+                    className={`py-2 px-2 rounded border text-left transition-all ${deliberationOn === opt.on
+                      ? 'border-terminal-green bg-terminal-green/10 text-terminal-green'
+                      : 'border-terminal-border bg-terminal-surface text-terminal-dim hover:border-terminal-dim'}`}>
+                    <div className="text-xs font-semibold">{opt.label}</div>
+                    <div className="text-[10px] mt-0.5 leading-tight opacity-70">{opt.desc}</div>
+                  </button>
+                ))}
+              </div>
+              {deliberationOn && (
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { value: 'role'       as const, label: 'Same role',  desc: 'Their bench only' },
+                    { value: 'department' as const, label: 'Department', desc: 'Their department' },
+                    { value: 'anyone'     as const, label: 'Anyone',     desc: 'Whole room' },
+                  ]).map((opt) => (
+                    <button key={opt.value} onClick={() => setDeliberationScope(opt.value)}
+                      aria-pressed={deliberationScope === opt.value}
+                      className={`py-1.5 px-1 rounded border text-center transition-all ${deliberationScope === opt.value
+                        ? 'border-terminal-blue bg-terminal-blue/10 text-terminal-blue'
+                        : 'border-terminal-border bg-terminal-surface text-terminal-dim hover:border-terminal-dim'}`}>
+                      <div className="text-[11px] font-semibold">{opt.label}</div>
+                      <div className="text-[9px] mt-0.5 leading-tight opacity-70">{opt.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <button onClick={launchRoom} disabled={!selectedScenario || roomPlayers.length === 0}
             className="w-full py-3 rounded border border-terminal-green bg-terminal-green/10 text-terminal-green

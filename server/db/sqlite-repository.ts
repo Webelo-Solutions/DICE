@@ -10,6 +10,8 @@ import {
   kvState,
   rooms,
   participants,
+  departments,
+  participantEvents,
   roomSessions,
   contentPacks,
   injectsCatalog,
@@ -18,6 +20,7 @@ import {
 } from './schema'
 import type {
   DiceRepository, RoomRow, RoomInsert, ParticipantRow, ParticipantInsert, RoomSessionRow, ContentPackRow,
+  DepartmentRow, DepartmentInsert, ParticipantEventRow, ParticipantEventInsert,
   UserRow, UserInsert, AuthSessionRow, AuthSessionInsert,
 } from './repository'
 import type { Character, CriticalInjectCatalogEntry } from '../../src/types/game'
@@ -321,11 +324,49 @@ export class SqliteRepository implements DiceRepository {
   getParticipantByTokenHash(tokenHash: string): ParticipantRow | null {
     return this.db.select().from(participants).where(eq(participants.tokenHash, tokenHash)).get() ?? null
   }
+  getParticipantById(id: string): ParticipantRow | null {
+    return this.db.select().from(participants).where(eq(participants.id, id)).get() ?? null
+  }
   listParticipants(roomId: string): ParticipantRow[] {
     return this.db.select().from(participants).where(eq(participants.roomId, roomId)).all()
   }
   touchParticipant(id: string): void {
     this.db.update(participants).set({ lastSeenAt: Date.now() }).where(eq(participants.id, id)).run()
+  }
+  updateParticipant(id: string, updates: Partial<Pick<ParticipantRow, 'role' | 'gameRole' | 'departmentId' | 'displayName'>>): void {
+    if (Object.keys(updates).length === 0) return
+    this.db.update(participants).set(updates).where(eq(participants.id, id)).run()
+  }
+
+  listDepartments(roomId: string): DepartmentRow[] {
+    return this.db.select().from(departments).where(eq(departments.roomId, roomId)).all()
+  }
+  getDepartmentById(id: string): DepartmentRow | null {
+    return this.db.select().from(departments).where(eq(departments.id, id)).get() ?? null
+  }
+  createDepartment(row: DepartmentInsert): void {
+    this.db.insert(departments).values(row).run()
+  }
+  updateDepartment(id: string, updates: Partial<Pick<DepartmentRow, 'name' | 'leadParticipantId'>>): void {
+    if (Object.keys(updates).length === 0) return
+    this.db.update(departments).set(updates).where(eq(departments.id, id)).run()
+  }
+  recordParticipantEvent(row: ParticipantEventInsert): void {
+    this.db.insert(participantEvents).values(row).run()
+  }
+  listParticipantEvents(roomId: string, sessionId?: string): ParticipantEventRow[] {
+    const where = sessionId
+      ? and(eq(participantEvents.roomId, roomId), eq(participantEvents.sessionId, sessionId))
+      : eq(participantEvents.roomId, roomId)
+    return this.db.select().from(participantEvents).where(where).all()
+  }
+
+  deleteDepartment(id: string): void {
+    // Detach members before dropping the row. Without this, participants keep a
+    // department_id pointing at nothing and quietly vanish from every grouped
+    // view — there is no FK cascade on this connection.
+    this.db.update(participants).set({ departmentId: null }).where(eq(participants.departmentId, id)).run()
+    this.db.delete(departments).where(eq(departments.id, id)).run()
   }
 
   getRoomSession(roomId: string): RoomSessionRow | null {

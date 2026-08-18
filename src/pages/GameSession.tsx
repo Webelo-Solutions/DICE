@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { useGameStore } from '../store/gameStore'
@@ -10,6 +10,8 @@ import { DiceRollOverlay } from '../components/DiceRollOverlay'
 import { ScenarioClock, RoundTimer } from '../components/Timers'
 import { CharacterCard } from '../components/CharacterCard'
 import { InitiativeTracker } from '../components/InitiativeTracker'
+import { RotationPanel } from '../components/RotationPanel'
+import { DeliberationPanel } from '../components/DeliberationPanel'
 import { ActionMenu } from '../components/ActionMenu'
 import { callDM, callDMHint } from '../engine/dmClient'
 import { callAdversaryOptions, callAdversaryNarrate, getEvasionModifier } from '../engine/adversaryClient'
@@ -38,7 +40,7 @@ export function GameSession() {
   const {
     session, feed, isDMThinking, providerConfig,
     appendFeed, applyDMResponse, applyAdversaryRoll, markRoundTimerExpired, advanceTurn, endSession,
-    updateSessionPlayer, markTraitUsed,
+    updateSessionPlayer, markTraitUsed, reassignActor, setDeliberation,
   } = store
 
   const { speakChunk, flushChunks, speak: speakDM, cancel: cancelSpeech } = useVoiceDM()
@@ -100,7 +102,22 @@ export function GameSession() {
   const incomingAction = useRoomStore((s) => s.incomingAction)
   const roomRole       = useRoomStore((s) => s.membership?.role)
   const roomStreaming  = useRoomStore((s) => s.streamingNarration)
+  const roomParticipants = useRoomStore((s) => s.participants)
   const [autoRoll, setAutoRoll] = useState(false)
+
+  // ── Departmental rotation ────────────────────────────────────────────────
+  // The rotation skips anyone without an open socket rather than handing them
+  // a turn nobody is there to take (decision D14), so every advance needs the
+  // live connectivity set. Connection state lives in roomStore, not in the
+  // session, so it is read here and passed down.
+  const isDepartmental = session?.mode === 'departmental'
+  const connectedIds = useMemo(
+    () => roomParticipants.filter((p) => p.connected).map((p) => p.id),
+    [roomParticipants],
+  )
+  // Solo replay of a departmental session (no room attached) has no
+  // connectivity to speak of — treat everyone as available rather than stalling.
+  const eligibleIds = roomParticipants.length > 0 ? connectedIds : undefined
 
   // Speak the facilitator's own room-streamed narration too — it's already
   // shown visually via NarrativeFeed (below) but was never fed to the voice
@@ -283,7 +300,7 @@ export function GameSession() {
         postWebhookEvent(commConfig, `📖 DM: ${response.narration}`)
       }
 
-      if (phase !== 'init') advanceTurn()
+      if (phase !== 'init') advanceTurn(eligibleIds)
 
       setTimerKey((k) => k + 1)
       setTimerRunning(true)
@@ -461,7 +478,13 @@ export function GameSession() {
   useEffect(() => {
     if (roomRole !== 'facilitator' || !incomingAction) return
     if (!session || isDMThinking || waitingForRoll) return   // process only when idle
-    if (session.currentTurnPlayerId !== incomingAction.characterId) {
+    // Departmental turns are held by a participant, and two people staffing the
+    // same role share nothing but that role — so the character id alone cannot
+    // say whether this action came from whoever is actually up.
+    const isCurrent = isDepartmental
+      ? session.currentActor?.participantId === incomingAction.participantId
+      : session.currentTurnPlayerId === incomingAction.characterId
+    if (!isCurrent) {
       useRoomStore.getState().clearIncomingAction()   // stale — turn already moved on
       return
     }
@@ -469,7 +492,7 @@ export function GameSession() {
     useRoomStore.getState().clearIncomingAction()
     handleActionSubmit(text)
     setAutoRoll(true)
-  }, [incomingAction, roomRole, session?.currentTurnPlayerId, isDMThinking, waitingForRoll])
+  }, [incomingAction, roomRole, session?.currentTurnPlayerId, session?.currentActor?.participantId, isDMThinking, waitingForRoll])
 
   // Second half of the auto-process: once the action is staged and waiting for
   // a roll, just clear the flag — the DiceRollOverlay self-rolls on mount and
@@ -484,6 +507,35 @@ export function GameSession() {
   }, [autoRoll, waitingForRoll, isDMThinking])
 
   const handleTimerExpire = () => {
+    // Departmental: the turn belongs to the ROLE, so a silent actor forfeits it
+    // to the next person in that role's pool rather than costing the whole role
+    // its action (decision D14). The round does not advance.
+    if (isDepartmental && session?.currentActor) {
+      const forfeiting = session.currentActor
+      const seat = session.seats?.find((s) => s.participantId === forfeiting.participantId)
+      // Record it whether or not anyone is available to pick the turn up — the
+      // fact that this person went silent is the reportable event either way.
+      const membership = useRoomStore.getState().membership
+      if (membership?.role === 'facilitator') {
+        roomApi.recordForfeit(membership.code, membership.token, forfeiting.participantId, session.round)
+          .catch((e) => console.error('[forfeit]', e))
+      }
+      reassignActor(eligibleIds)
+      const next = useGameStore.getState().session?.currentActor
+      if (next && next.participantId !== forfeiting.participantId) {
+        const nextSeat = session.seats?.find((s) => s.participantId === next.participantId)
+        appendFeed({
+          id:        uid(),
+          type:      'system',
+          speaker:   'TIMER',
+          text:      `${seat?.displayName ?? 'The acting responder'} did not call it in time — ${nextSeat?.displayName ?? 'the next responder'} picks up the ${forfeiting.role} action.`,
+          timestamp: Date.now(),
+        })
+        return
+      }
+      // Nobody else in the role is reachable — fall through to the standard
+      // penalty so the turn still costs something.
+    }
     markRoundTimerExpired()
     appendFeed({
       id:        uid(),
@@ -493,6 +545,13 @@ export function GameSession() {
       timestamp: Date.now(),
     })
   }
+
+  // The facilitator drives turns locally and so never applies the session
+  // broadcast that clears suggestions for everyone else. Without this their
+  // panel would accumulate every suggestion of the whole session.
+  useEffect(() => {
+    useRoomStore.getState().clearSuggestions()
+  }, [session?.currentActor?.participantId])
 
   // ── Adversary phase: trigger when a new round starts in adversary mode ────
   const prevRoundRef = useRef(1)
@@ -916,24 +975,53 @@ export function GameSession() {
       <div className="flex flex-1 overflow-hidden">
         {/* Left sidebar */}
         <div className="w-56 flex-shrink-0 border-r border-terminal-border p-4 space-y-6 overflow-y-auto">
-          <InitiativeTracker
-            players={session.players}
-            order={session.initiativeOrder}
-            currentId={session.currentTurnPlayerId}
-            attackerStage={session.attackerProgress[session.attackerProgress.length - 1]}
-          />
-          <div className="space-y-2">
-            <div className="text-[10px] text-terminal-dim tracking-widest uppercase">Team</div>
-            {session.players.map((p) => (
-              <CharacterCard
-                key={p.id}
-                character={p}
-                isActive={p.id === session.currentTurnPlayerId && canAct}
-                compact
-                onEdit={(name, cls) => updateSessionPlayer(p.id, { name, class: cls })}
+          {/* Departmental sessions run on a ROLE order, and twenty character
+              cards would bury the sidebar — so the rotation replaces both the
+              per-character initiative tracker and the full team list, and only
+              the acting sheet is shown in detail. */}
+          {isDepartmental ? (
+            <>
+              <RotationPanel
+                session={session}
+                connectedIds={new Set(connectedIds)}
+                onReassign={roomRole === 'facilitator' ? () => reassignActor(eligibleIds) : undefined}
+                onSetDeliberation={roomRole === 'facilitator' ? setDeliberation : undefined}
               />
-            ))}
-          </div>
+              {/* The facilitator watches the bench without joining it — what the
+                  room is telling the actor is the clearest live read on whether
+                  they are engaged or drifting. */}
+              {session.deliberation?.enabled && (
+                <DeliberationPanel session={session} me={null} isMyTurn={false} />
+              )}
+              {currentPlayer && (
+                <div className="space-y-2">
+                  <div className="text-[10px] text-terminal-dim tracking-widest uppercase">Acting Sheet</div>
+                  <CharacterCard character={currentPlayer} isActive={canAct} compact />
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <InitiativeTracker
+                players={session.players}
+                order={session.initiativeOrder}
+                currentId={session.currentTurnPlayerId}
+                attackerStage={session.attackerProgress[session.attackerProgress.length - 1]}
+              />
+              <div className="space-y-2">
+                <div className="text-[10px] text-terminal-dim tracking-widest uppercase">Team</div>
+                {session.players.map((p) => (
+                  <CharacterCard
+                    key={p.id}
+                    character={p}
+                    isActive={p.id === session.currentTurnPlayerId && canAct}
+                    compact
+                    onEdit={(name, cls) => updateSessionPlayer(p.id, { name, class: cls })}
+                  />
+                ))}
+              </div>
+            </>
+          )}
 
           {session.npcs.some((n) => n.introduced) && (
             <div className="border-t border-terminal-border pt-4">

@@ -19,7 +19,11 @@
     "build:uat": "node scripts/build-uat-checklist.mjs && node scripts/build-uat-checklist-xlsx.mjs",
     "verify:tls": "node scripts/verify-tls.mjs",
     "verify:room-codes": "node scripts/verify-room-codes.mjs",
-    "verify:generator": "tsx scripts/verify-generator.ts"
+    "verify:generator": "tsx scripts/verify-generator.ts",
+    "verify:rotation": "tsx scripts/verify-rotation.ts",
+    "verify:report": "tsx scripts/verify-report.ts",
+    "verify:departmental": "npm run verify:rotation && npm run verify:report",
+    "verify:live": "tsx scripts/live-departmental-test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

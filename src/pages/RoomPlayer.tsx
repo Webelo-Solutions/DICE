@@ -9,6 +9,7 @@ import { ActionMenu } from '../components/ActionMenu'
 import { VoiceDMButton } from '../components/VoiceDMButton'
 import { DiceRollOverlay } from '../components/DiceRollOverlay'
 import { ClaimFacilitatorPanel } from '../components/ClaimFacilitatorPanel'
+import { DeliberationPanel } from '../components/DeliberationPanel'
 import { ScenarioClock, RoundTimer } from '../components/Timers'
 import { useVoiceDM } from '../hooks/useVoiceDM'
 import { computeXpAwards } from '../utils/xp'
@@ -44,8 +45,19 @@ export function RoomPlayer() {
   // Hoisted above the early returns below so the turn-alert effect (which
   // needs it) can run unconditionally, per the Rules of Hooks. Safe with
   // optional chaining even before `membership`/`session` are known non-null.
-  const myCharId = participants.find((p) => p.id === membership?.participantId)?.characterId ?? null
-  const isMyTurn = !!myCharId && session?.currentTurnPlayerId === myCharId
+  // Departmental turns are held by a PARTICIPANT: the role comes up, then the
+  // rotation picks who takes it. Someone on the role baseline has no roster
+  // character, so matching on characterId would mean their turn never arrives.
+  const isDepartmental = session?.mode === 'departmental'
+  const mySeat   = isDepartmental
+    ? session?.seats?.find((s) => s.participantId === membership?.participantId) ?? null
+    : null
+  const myCharId = isDepartmental
+    ? mySeat?.characterId ?? null
+    : participants.find((p) => p.id === membership?.participantId)?.characterId ?? null
+  const isMyTurn = isDepartmental
+    ? !!membership && session?.currentActor?.participantId === membership.participantId
+    : !!myCharId && session?.currentTurnPlayerId === myCharId
 
   const [busy, setBusy]   = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -151,7 +163,13 @@ export function RoomPlayer() {
   const leave = () => { disconnectRoom(); useRoomStore.getState().clearMembership(); navigate('/') }
 
   const me     = participants.find((p) => p.id === membership.participantId)
-  const myChar = me?.character ?? null
+  // In a departmental session the sheet that resolves your rolls is the one the
+  // session seated you on — your own character when it matched your role, or
+  // the role baseline. Reading it off the participant row would show a
+  // character that isn't the one being rolled.
+  const myChar = (isDepartmental
+    ? session?.players.find((c) => c.id === mySeat?.characterId)
+    : me?.character) ?? null
 
   if (endedSnapshot) {
     const { session: endSession, feed: endFeed } = endedSnapshot
@@ -159,7 +177,13 @@ export function RoomPlayer() {
     const { perPlayer: xpByPlayer } = computeXpAwards(endSession.players, endFeed, outcome)
     const label     = outcome === 'victory' ? 'CONTAINED' : outcome === 'partial' ? 'PARTIAL' : 'BREACH'
     const color     = outcome === 'defeat' ? 'text-terminal-red' : 'text-terminal-green'
-    const myEndChar = endSession.players.find((c) => c.id === me?.characterId)
+    // Match the sheet the session actually seated us on — a template seat has
+    // no participant characterId, so `me.characterId` would find nothing and
+    // the player would be shown no result at all.
+    const myEndCharId = endSession.mode === 'departmental'
+      ? endSession.seats?.find((s) => s.participantId === membership.participantId)?.characterId
+      : me?.characterId
+    const myEndChar = endSession.players.find((c) => c.id === myEndCharId)
     const backToLobby = () => { setEndedSnapshot(null); navigate('/lobby') }
 
     return (
@@ -245,12 +269,15 @@ export function RoomPlayer() {
     return Math.max(30, base + agiBonus - modeDeduct)
   })()
 
-  const submitAction = async (action: string) => {
+  // `adoptedFrom` credits the teammate whose suggestion was taken verbatim. An
+  // action the player typed themselves carries no credit, even if it says much
+  // the same thing — otherwise the bench's measured influence is inflated.
+  const submitAction = async (action: string, adoptedFrom?: string) => {
     const text = action.trim()
     if (!text) return
     stopTitleFlash()
     setBusy(true); setError(null)
-    try { await roomApi.submitAction(membership.code, membership.token, text) }
+    try { await roomApi.submitAction(membership.code, membership.token, text, adoptedFrom) }
     catch (e) { setError(e instanceof Error ? e.message : String(e)) }
     finally { setBusy(false) }
   }
@@ -411,17 +438,42 @@ export function RoomPlayer() {
         <ClaimFacilitatorPanel />
         {error && <div className="text-[11px] text-terminal-red">{error}</div>}
 
+        {/* Deliberation is what the rest of the room does while one person acts.
+            It sits above the action controls for the actor (their bench's advice
+            informs the call) and replaces the idle "hold tight" line for
+            everyone else, who now have something to contribute. */}
+        {isDepartmental && session.deliberation?.enabled && (
+          <DeliberationPanel
+            session={session}
+            me={me ?? null}
+            isMyTurn={isMyTurn}
+            onAdopt={(text, fromParticipantId) => submitAction(text, fromParticipantId)}
+          />
+        )}
+
         {isMyTurn && myChar ? (
           <div>
-            <div className="text-[10px] text-terminal-green tracking-widest uppercase mb-2">▶ Your turn, {myChar.name}</div>
+            <div className="text-[10px] text-terminal-green tracking-widest uppercase mb-2">
+              ▶ Your turn, {myChar.name}
+              {isDepartmental && session.currentActor && (
+                <span className="text-terminal-dim"> · acting as {session.currentActor.role}</span>
+              )}
+            </div>
             <ActionMenu character={myChar} onSubmit={(action) => submitAction(action)} disabled={busy} />
           </div>
         ) : (
           <div className="flex items-center justify-between">
             <span className="text-[11px] text-terminal-dim">
-              {currentChar
-                ? <>Hold tight — <span className="text-terminal-blue">{currentChar.name}</span> is taking their turn. You're up soon.</>
-                : 'Waiting for the next turn…'}
+              {isDepartmental && session.currentActor
+                ? <>
+                    <span className="text-terminal-blue">
+                      {session.seats?.find((s) => s.participantId === session.currentActor!.participantId)?.displayName ?? 'A teammate'}
+                    </span>
+                    {' '}is taking the {session.currentActor.role} turn.
+                  </>
+                : currentChar
+                  ? <>Hold tight — <span className="text-terminal-blue">{currentChar.name}</span> is taking their turn. You're up soon.</>
+                  : 'Waiting for the next turn…'}
             </span>
             <button onClick={leave} className="text-[10px] text-terminal-red/70 hover:text-terminal-red tracking-widest uppercase">Leave</button>
           </div>

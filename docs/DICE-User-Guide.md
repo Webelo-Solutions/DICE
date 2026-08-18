@@ -171,7 +171,7 @@ All DICE data — every user's data combined — lives in a single database file
 
 **Shared by everyone on the install: **content packs you import (Section 28), admin-authored global scenarios (Section 14), the injects catalog (Section 13), the active organizational profile, and the master list of built-in scenarios.
 
-**Backups: **simply copy dice.db somewhere safe. To restore, copy it back. The file contains everyone's data and all accounts — guard it accordingly.
+**Backups: **close DICE first, then copy dice.db somewhere safe. DICE keeps recent changes in a companion file named dice.db-wal until it shuts down, so copying dice.db while DICE is still running can miss your latest sessions. If you must copy it while DICE is open, take dice.db, dice.db-wal and dice.db-shm together. To restore, close DICE and copy the files back. They contain everyone's data and all accounts — guard them accordingly.
 
 **Your API key: **kept separately in your browser's local storage (not in the database), so it is never included in a database backup. Each person's browser holds their own key.
 

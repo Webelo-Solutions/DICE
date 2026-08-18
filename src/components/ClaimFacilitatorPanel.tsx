@@ -36,7 +36,11 @@ export function ClaimFacilitatorPanel() {
       const m = await roomApi.claimFacilitator(membership.code, passphrase.trim(), userToken, displayName.trim() || undefined)
       useRoomStore.getState().setMembership({
         code: m.room.code, token: m.token, role: m.participant.role,
-        participantId: m.participant.id, displayName: m.participant.displayName, roomName: m.room.name,
+        participantId: m.participant.id, displayName: m.participant.displayName,
+        // Carry the room mode across the handover — without it the reclaiming
+        // facilitator falls back to the standard lobby and loses the department
+        // and staffing views for a session that is still departmental.
+        roomName: m.room.name, mode: m.room.mode,
       })
       connectRoom(m.room.code, m.token)
 
