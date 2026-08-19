@@ -49,6 +49,7 @@ export function AdminAnalytics() {
   const [sessions, setSessions] = useState<Session[]>([])
   const [cadenceDays, setCadenceDays] = useState(90)
   const [cadenceDraft, setCadenceDraft] = useState('90')
+  const [providerDraft, setProviderDraft] = useState('')
   const [loading,  setLoading]  = useState(true)
   const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
   const [csvBusy, setCsvBusy] = useState(false)
@@ -58,6 +59,7 @@ export function AdminAnalytics() {
     try {
       const [u, a] = await Promise.all([apiAdmin.listUsers(), apiAdmin.getAnalytics()])
       setUsers(u); setSessions(a.sessions); setCadenceDays(a.cadenceDays); setCadenceDraft(String(a.cadenceDays))
+      setProviderDraft(a.cpeProviderName)
     } catch (e) { setMsg({ kind: 'error', text: (e as Error).message }) }
     finally { setLoading(false) }
   }
@@ -75,6 +77,16 @@ export function AdminAnalytics() {
       const r = await apiAdmin.setCadenceDays(days)
       setCadenceDays(r.cadenceDays)
       flash('success', `Exercise cadence set to every ${r.cadenceDays} days`)
+    } catch (e) { flash('error', (e as Error).message) }
+  }
+
+  const saveProvider = async () => {
+    const name = providerDraft.trim()
+    if (!name) return flash('error', 'A provider name is required')
+    try {
+      const r = await apiAdmin.setCpeProviderName(name)
+      setProviderDraft(r.providerName)
+      flash('success', `CPE certificates will name ${r.providerName} as provider`)
     } catch (e) { flash('error', (e as Error).message) }
   }
 
@@ -186,6 +198,31 @@ export function AdminAnalytics() {
                 >
                   Save
                 </button>
+              </div>
+
+              {/* The name printed as activity sponsor on every CPE certificate.
+                  ISC² expects a certificate to say who ran the training, and
+                  DICE is the tool rather than the provider. */}
+              <div className="bg-white rounded border border-gray-200 p-4 mb-4">
+                <div className="flex items-center gap-3">
+                  <label className="text-xs text-gray-500 flex-shrink-0" htmlFor="cpe-provider">CPE certificate provider:</label>
+                  <input
+                    id="cpe-provider" type="text" maxLength={120} value={providerDraft}
+                    onChange={(e) => setProviderDraft(e.target.value)}
+                    placeholder="Acme Corporation, Security Operations"
+                    className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-400"
+                  />
+                  <button
+                    onClick={saveProvider}
+                    className="text-xs px-3 py-1.5 rounded border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-all flex-shrink-0"
+                  >
+                    Save
+                  </button>
+                </div>
+                <p className="text-[11px] text-gray-400 mt-2">
+                  Named as the activity sponsor on every certificate of attendance. Use the organisation
+                  running the exercise, not the tool.
+                </p>
               </div>
 
               <div className="bg-white rounded border border-gray-200 overflow-hidden">

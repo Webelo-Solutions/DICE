@@ -5,6 +5,7 @@ import { generateLearningPath, formatDuration, formatTimestamp } from '../utils/
 import { PROVIDER_LABEL } from '../types/provider'
 import { HeadshotAvatar } from '../components/HeadshotAvatar'
 import { DepartmentalReportSection } from '../components/DepartmentalReportSection'
+import { CpeSection } from '../components/CpeSection'
 import {
   extractActionTriples,
   mechanicalGrade,
@@ -94,6 +95,9 @@ export function HotWash() {
   // once at session end and stored on the history record rather than recomputed
   // here — this page has no way to reach the ledger itself.
   const departmentalReport = sessionHistory.find((r) => r.id === session.id)?.departmental ?? null
+  // Same story for CPE: measured from the server-side ledger at session end and
+  // read back off the stored record, never recomputed here.
+  const cpeReport = sessionHistory.find((r) => r.id === session.id)?.cpe ?? null
 
   const handleGenerateAssessment = async () => {
     setAiLoading(true)
@@ -276,6 +280,16 @@ export function HotWash() {
               Departmental Participation
             </h3>
             <DepartmentalReportSection report={departmentalReport} />
+          </section>
+        )}
+
+        {/* ── CPE CREDIT (departmental sessions only) ────────────────────── */}
+        {cpeReport && cpeReport.awards.length > 0 && (
+          <section>
+            <h3 className="text-sm font-bold tracking-widest text-gray-500 uppercase mb-3">
+              ISC² CPE Credit
+            </h3>
+            <CpeSection sessionId={session.id} report={cpeReport} />
           </section>
         )}
 

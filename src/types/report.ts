@@ -1,4 +1,5 @@
 import type { CharacterClass } from './game'
+import type { PresenceSpan } from './cpe'
 
 // ─── Departmental after-action reporting ──────────────────────────────────────
 //
@@ -18,6 +19,14 @@ export interface ParticipantTally {
   suggestionsOffered: number
   suggestionsAdopted: number
   disconnects:        number
+  // The DICE account this seat joined as, when there was one. Only CPE uses it
+  // so far, to accumulate a person's credit across sessions by account rather
+  // than by however they spelled their name that day.
+  ownerUserId?:       string | null
+  // Stretches of connected time, reconstructed server-side from the presence
+  // events in the ledger. Attendance for CPE is measured from these rather than
+  // from the session's length — see src/utils/cpe.ts.
+  presence?:          PresenceSpan[]
 }
 
 // One person's line in the after-action report.

@@ -126,6 +126,12 @@ export const api = {
   downloadSessionReport: (id: string) => downloadFile(`/session-history/${encodeURIComponent(id)}/report.pdf`, 'DICE-Report.pdf'),
   downloadSessionJson:   (id: string) => downloadFile(`/session-history/${encodeURIComponent(id)}/export.json`, 'DICE-Session.json'),
   downloadSessionHistoryCsv: () => downloadFile('/session-history/export.csv', 'DICE-Session-History.csv'),
+  // One attendee's CPE certificate for one session (departmental sessions only).
+  downloadCpeCertificate: (sessionId: string, participantId: string) =>
+    downloadFile(
+      `/session-history/${encodeURIComponent(sessionId)}/cpe/${encodeURIComponent(participantId)}/certificate.pdf`,
+      'DICE-CPE-Certificate.pdf',
+    ),
 
   // ── Org state / profile ──
   getOrgState:  () => req<OrgState | null>('/org-state'),

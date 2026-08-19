@@ -17,6 +17,7 @@ export const NAV_ENTRIES: NavEntry[] = [
   { label: 'Campaigns',       path: '/campaigns',             glyph: '📁', group: 'play' },
   { label: 'Content Packs',   path: '/content-packs',         glyph: '📦', group: 'play' },
   { label: 'Analytics',       path: '/analytics',             glyph: '📈', group: 'play' },
+  { label: 'CPE Credit',      path: '/cpe',                   glyph: '🎓', group: 'play' },
   { label: 'Host Game',       path: '/host',                  glyph: '📡', group: 'play' },
   { label: 'Join Game',       path: '/join',                  glyph: '🔗', group: 'play' },
   { label: 'Account',         path: '/account',               glyph: '👤', group: 'play' },

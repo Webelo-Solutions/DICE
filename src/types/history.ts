@@ -1,5 +1,6 @@
 import type { SessionResult, LearningPathItem, LearningPriority, FeedEntry } from './game'
 import type { DepartmentalReport } from './report'
+import type { SessionCpeReport } from './cpe'
 
 export interface SessionRecord {
   id:            string
@@ -22,6 +23,11 @@ export interface SessionRecord {
   // because it needs the server-side event ledger, which the client cannot
   // reconstruct afterwards.
   departmental?: DepartmentalReport
+  // ISC² CPE credit for the people who sat in this exercise. Departmental
+  // sessions only, for the same reason as `departmental` above: a standard or
+  // solo session names characters, and a certificate needs a person. Computed
+  // at session end from measured attendance — see src/utils/cpe.ts.
+  cpe?:          SessionCpeReport
 }
 
 export interface GapFrequency {

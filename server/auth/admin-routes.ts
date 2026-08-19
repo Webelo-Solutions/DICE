@@ -24,6 +24,14 @@ const MAX_CODE_LEN = 64
 // though none of them mandate this specific number).
 const CADENCE_DAYS_KEY = 'exerciseCadenceDays'
 const DEFAULT_CADENCE_DAYS = 90
+
+// The organisation named as the activity sponsor on a CPE certificate. ISC²
+// expects a certificate to say who ran the training, and "DICE" is the tool
+// rather than the provider, so this is set per install and falls back to a
+// label that is obviously a placeholder instead of quietly looking official.
+const CPE_PROVIDER_KEY = 'cpeProviderName'
+const DEFAULT_CPE_PROVIDER = 'Unnamed organization'
+const MAX_CPE_PROVIDER_LENGTH = 120
 const MIN_CADENCE_DAYS = 1
 const MAX_CADENCE_DAYS = 3650
 
@@ -177,7 +185,18 @@ export async function adminRoutes(app: FastifyInstance) {
   // per-user Analytics page uses, just over the combined record set.
   app.get('/admin/analytics', admin, async () => {
     const cadenceDays = repository.getKv<number>(CADENCE_DAYS_KEY) ?? DEFAULT_CADENCE_DAYS
-    return { sessions: repository.listAllSessionHistory(), cadenceDays }
+    const cpeProviderName = repository.getKv<string>(CPE_PROVIDER_KEY) ?? DEFAULT_CPE_PROVIDER
+    return { sessions: repository.listAllSessionHistory(), cadenceDays, cpeProviderName }
+  })
+
+  // The CPE sponsor name is readable by any signed-in user (a certificate
+  // renders it) but writable only by an admin, like every other install-wide
+  // setting here.
+  app.put<{ Body: { providerName?: string } }>('/admin/cpe/provider', admin, async (req, reply) => {
+    const name = (req.body?.providerName ?? '').trim().slice(0, MAX_CPE_PROVIDER_LENGTH)
+    if (!name) return reply.code(400).send({ error: 'A provider name is required' })
+    repository.setKv(CPE_PROVIDER_KEY, name)
+    return { providerName: name }
   })
 
   app.put<{ Body: { cadenceDays?: number } }>('/admin/analytics/cadence-days', admin, async (req, reply) => {

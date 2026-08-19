@@ -56,7 +56,9 @@ export const apiAdmin = {
 
   // Program-wide analytics — every user's session history + the configured
   // compliance-cadence target.
-  getAnalytics: () => call<{ sessions: Array<SessionRecord & { ownerUserId: string | null }>; cadenceDays: number }>('/analytics', 'GET'),
+  getAnalytics: () => call<{ sessions: Array<SessionRecord & { ownerUserId: string | null }>; cadenceDays: number; cpeProviderName: string }>('/analytics', 'GET'),
+  // The organisation named as activity sponsor on CPE certificates.
+  setCpeProviderName: (providerName: string) => call<{ providerName: string }>('/cpe/provider', 'PUT', { providerName }),
   setCadenceDays: (cadenceDays: number) => call<{ cadenceDays: number }>('/analytics/cadence-days', 'PUT', { cadenceDays }),
   downloadTeamCsv: () => downloadFile('/admin/analytics/export.csv', 'DICE-Program-Session-History.csv'),
 

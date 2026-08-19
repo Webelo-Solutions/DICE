@@ -10,6 +10,7 @@ import { HotWash }          from './pages/HotWash'
 import { CampaignBuilder }  from './pages/CampaignBuilder'
 import { ContentPacks }     from './pages/ContentPacks'
 import { Analytics }        from './pages/Analytics'
+import { CpeLedger }        from './pages/CpeLedger'
 import { AdversarySetup }   from './pages/AdversarySetup'
 import { HostGame }         from './pages/HostGame'
 import { JoinGame }         from './pages/JoinGame'
@@ -130,6 +131,7 @@ export function App() {
         <Route path="/campaigns" element={<CampaignBuilder />} />
         <Route path="/content-packs" element={<ContentPacks />} />
         <Route path="/analytics" element={<Analytics />} />
+        <Route path="/cpe"       element={<CpeLedger />} />
         <Route path="/account"     element={<Account />} />
         <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
         <Route path="/admin/analytics" element={<RequireAdmin><AdminAnalytics /></RequireAdmin>} />

@@ -22,7 +22,9 @@
     "verify:generator": "tsx scripts/verify-generator.ts",
     "verify:rotation": "tsx scripts/verify-rotation.ts",
     "verify:report": "tsx scripts/verify-report.ts",
-    "verify:departmental": "npm run verify:rotation && npm run verify:report",
+    "verify:cpe": "tsx scripts/verify-cpe.ts",
+    "verify:cpe:live": "tsx scripts/live-cpe-test.ts",
+    "verify:departmental": "npm run verify:rotation && npm run verify:report && npm run verify:cpe",
     "verify:live": "tsx scripts/live-departmental-test.ts"
   },
   "dependencies": {

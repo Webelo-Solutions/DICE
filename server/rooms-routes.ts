@@ -394,6 +394,25 @@ export async function roomRoutes(app: FastifyInstance) {
     if (me.role !== 'facilitator') return reply.code(403).send({ error: 'Only the facilitator can update the session' })
     const session = req.body?.session ?? null
     const feed = req.body?.feed ?? []
+
+    // A session starting is the moment attendance begins to count. Everyone
+    // holding a socket right now is present from here; without this marker the
+    // ledger would only know about people who happened to reconnect later, and
+    // anyone who joined in the lobby and simply stayed would look absent.
+    // Keyed on the session id changing rather than on room.status, so a room
+    // running a second exercise marks attendance for that one too.
+    const previousSessionId = (repository.getRoomSession(room.id)?.session as { id?: string } | null)?.id ?? null
+    const incomingSessionId = (session as { id?: string } | null)?.id ?? null
+    if (room.mode === 'departmental' && incomingSessionId && incomingSessionId !== previousSessionId) {
+      const now = Date.now()
+      for (const participantId of connectedParticipantIds(room.id)) {
+        repository.recordParticipantEvent({
+          id: randomUUID(), roomId: room.id, sessionId: incomingSessionId,
+          participantId, kind: 'present', round: null, at: now, payload: null,
+        })
+      }
+    }
+
     repository.upsertRoomSession(room.id, session, feed)
     if (room.status === 'lobby') repository.setRoomStatus(room.id, 'active')
     broadcast(room.id, { type: 'session', session, feed })
@@ -583,6 +602,40 @@ export async function roomRoutes(app: FastifyInstance) {
 
       const events = repository.listParticipantEvents(room.id, req.query.sessionId)
       const departments = new Map(repository.listDepartments(room.id).map((d) => [d.id, d.name]))
+      const connected = connectedParticipantIds(room.id)
+      const now = Date.now()
+
+      // Rebuilds stretches of connected time from the presence events. A
+      // `present` (session start) or `connect` opens a span and a `disconnect`
+      // closes it; a span still open when the tally is taken runs to now, which
+      // for the session-end call is the moment the exercise finished. Repeated
+      // opens without an intervening close are ignored rather than nested, so a
+      // duplicate event cannot inflate anyone's attendance. Spans are clamped
+      // to the session window by the CPE calculation, not here.
+      const presenceFor = (participantId: string): Array<{ from: number; to: number }> => {
+        const timeline = events
+          .filter((e) => e.participantId === participantId)
+          .filter((e) => e.kind === 'present' || e.kind === 'connect' || e.kind === 'disconnect')
+          .sort((a, b) => a.at - b.at)
+
+        const spans: Array<{ from: number; to: number }> = []
+        let openedAt: number | null = null
+        for (const event of timeline) {
+          if (event.kind === 'disconnect') {
+            if (openedAt !== null) { spans.push({ from: openedAt, to: event.at }); openedAt = null }
+          } else if (openedAt === null) {
+            openedAt = event.at
+          }
+        }
+        // Still connected, or dropped without the close being recorded (a
+        // server restart mid-exercise). Closing at `now` credits the time up to
+        // this call; the alternative — discarding the span — would zero out
+        // everyone who simply stayed to the end, which is the common case.
+        if (openedAt !== null) spans.push({ from: openedAt, to: now })
+        else if (spans.length === 0 && connected.has(participantId)) spans.push({ from: now, to: now })
+        return spans
+      }
+
       const tallies = repository.listParticipants(room.id)
         .filter((p) => p.role !== 'facilitator')
         .map((p) => {
@@ -598,6 +651,8 @@ export async function roomRoutes(app: FastifyInstance) {
             suggestionsOffered: count('suggestion'),
             suggestionsAdopted: count('suggestion_adopted'),
             disconnects:        count('disconnect'),
+            ownerUserId:        p.ownerUserId ?? null,
+            presence:           presenceFor(p.id),
           }
         })
       return reply.send({ tallies })
@@ -757,8 +812,25 @@ export async function roomRoutes(app: FastifyInstance) {
         return
       }
       repository.touchParticipant(participant.id)
+      // Checked BEFORE subscribing, or this socket would count itself and the
+      // participant would never look newly-connected.
+      const wasAlreadyConnected = connectedParticipantIds(room.id).has(participant.id)
       subscribe(room.id, socket, participant.id)
       broadcastLobby(room.id)
+
+      // The mirror of the disconnect below: a participant coming back opens a
+      // new stretch of presence. Same conditions on both sides — departmental
+      // rooms, live play only, and only on the transition rather than per
+      // socket — so the two kinds always pair up into spans.
+      if (room.mode === 'departmental' && !wasAlreadyConnected) {
+        const live = repository.getRoomSession(room.id)?.session as { id?: string; status?: string } | null
+        if (live?.status === 'active') {
+          repository.recordParticipantEvent({
+            id: randomUUID(), roomId: room.id, sessionId: live.id ?? null,
+            participantId: participant.id, kind: 'connect', round: null, at: Date.now(), payload: null,
+          })
+        }
+      }
 
       // Initial snapshot so a freshly-connected client is immediately in sync.
       const rs = repository.getRoomSession(room.id)

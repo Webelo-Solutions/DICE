@@ -161,6 +161,39 @@ export function renderSessionReportPdf(record: SessionRecord, ownerLabel: string
       doc.moveDown(0.8)
     }
 
+    // ── CPE credit ─────────────────────────────────────────────────────────
+    // Summary only. The certificate each attendee submits is a separate
+    // document (cpeCertificatePdf.ts) — this is the facilitator's record of
+    // what was issued and why.
+    const cpe = record.cpe
+    if (cpe && cpe.awards.length > 0) {
+      heading('ISC² CPE Credit')
+      kv('Activity:', cpe.activityTitle)
+      kv('Session Length:', `${cpe.sessionMinutes} min`)
+      kv('Group:', `${cpe.rules.group} — domain-related`)
+      kv('Basis:', `1 CPE per ${cpe.rules.minutesPerCredit} min attended, `
+        + `${cpe.rules.creditIncrement}-credit steps, rounded down`)
+      doc.moveDown(0.3)
+      for (const award of cpe.awards) {
+        ensure(16)
+        doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(`${award.attendeeName}  `, { continued: true })
+        doc.font('Helvetica').fontSize(8.5).fillColor(DIM).text(
+          `${award.credits.toFixed(1)} CPE · ${award.attendedMinutes} of ${cpe.sessionMinutes} min`
+          + (award.gameRole ? ` · ${award.gameRole}` : '')
+          + (award.spans > 1 ? ` · ${award.spans} connections` : ''),
+          { width: contentWidth },
+        )
+        doc.moveDown(0.35)
+      }
+      ensure(30)
+      doc.font('Helvetica-Oblique').fontSize(7.5).fillColor(DIM).text(
+        'Attendance is measured connected time, not the scheduled length. Each attendee is responsible for '
+        + 'confirming the activity qualifies under the CPE policy of the credential they maintain, before submitting to ISC².',
+        { width: contentWidth },
+      )
+      doc.moveDown(0.8)
+    }
+
     // ── Learning path ──────────────────────────────────────────────────────
     if (record.learningPath.length > 0) {
       heading('Learning Path')

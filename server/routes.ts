@@ -11,6 +11,7 @@ import type { OrgProfile } from '../src/types/orgProfile'
 import { validateDicepack } from '../src/content/dicepackSchema'
 import type { ContentPackRow } from './db/repository'
 import { renderSessionReportPdf } from './reports/sessionReportPdf'
+import { renderCpeCertificatePdf } from './reports/cpeCertificatePdf'
 import { toCsv } from './reports/csv'
 
 interface IdParam { id: string }
@@ -190,6 +191,30 @@ export async function apiRoutes(app: FastifyInstance) {
     reply.header('Content-Disposition', `attachment; filename="DICE-Report-${record.scenarioId}-${record.id.slice(0, 8)}.pdf"`)
     return reply.send(pdf)
   })
+
+  // One attendee's CPE certificate. Same read rule as the report above: the
+  // record's owner, or an admin. A participant cannot pull their own
+  // certificate directly — the facilitator owns the record and distributes
+  // them, which matches who is accountable for the attendance claim.
+  app.get<{ Params: IdParam & { participantId: string } }>(
+    '/session-history/:id/cpe/:participantId/certificate.pdf', auth, async (req, reply) => {
+      const record = repository.getSessionHistoryById(req.params.id)
+      if (!record) return reply.code(404).send({ error: 'session record not found' })
+      if (!canReadRecord(req, record.ownerUserId)) return reply.code(403).send({ error: 'not your session record' })
+      const award = record.cpe?.awards.find((a) => a.participantId === req.params.participantId)
+      if (!award) return reply.code(404).send({ error: 'no CPE award for that participant in this session' })
+      // Nothing to certify. Returning a certificate reading "0.0 CPE" would be
+      // worse than refusing: it looks like a claim.
+      if (award.credits <= 0) {
+        return reply.code(409).send({ error: 'that participant did not attend long enough to earn credit' })
+      }
+      const providerName = repository.getKv<string>('cpeProviderName') ?? 'Unnamed organization'
+      const pdf = await renderCpeCertificatePdf(record, award, providerName)
+      reply.type('application/pdf')
+      const safeName = award.attendeeName.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'Attendee'
+      reply.header('Content-Disposition', `attachment; filename="DICE-CPE-${safeName}-${record.id.slice(0, 8)}.pdf"`)
+      return reply.send(pdf)
+    })
 
   app.get<{ Params: IdParam }>('/session-history/:id/export.json', auth, async (req, reply) => {
     const record = repository.getSessionHistoryById(req.params.id)

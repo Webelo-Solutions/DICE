@@ -13,6 +13,7 @@ import { LevelUpModal } from '../components/LevelUpModal'
 import { launchCampaignScenario } from '../utils/campaignPlay'
 import { isTemplateCharacterId } from '../utils/departmentalSession'
 import { buildDepartmentalReport } from '../utils/departmentalReport'
+import { buildSessionCpeReport } from '../utils/cpe'
 import { useRoomStore } from '../store/roomStore'
 import { roomApi } from '../api/rooms'
 import { ALL_SCENARIOS } from '../data/scenarios'
@@ -72,7 +73,13 @@ export function SessionEnd() {
     if (session.mode === 'departmental' && membership?.role === 'facilitator') {
       roomApi.getTallies(membership.code, membership.token, session.id)
         .then(({ tallies }) => {
-          recordSession({ ...record, departmental: buildDepartmentalReport(session, feed, result, tallies) })
+          recordSession({
+            ...record,
+            departmental: buildDepartmentalReport(session, feed, result, tallies),
+            // Same tallies, different question: the departmental report asks
+            // what each person contributed, CPE asks how long they were here.
+            cpe: buildSessionCpeReport(session.scenario.title, result.startedAt, result.endedAt, tallies),
+          })
         })
         .catch((e) => console.error('[departmental-report]', e))
     }
