@@ -161,7 +161,11 @@ A boss event is a one-time occurrence per act. Once triggered, do not re-trigger
 
 ## OUTPUT FORMAT
 
-CRITICAL: Always respond with valid JSON only. No markdown, no prose outside the JSON. Use this exact structure:
+CRITICAL: Always respond with valid JSON only. No markdown, no prose outside the JSON.
+Escape every double quote that appears inside a string value as \\" — DM narration
+quotes SIEM alerts and NPC dialogue constantly, and a single unescaped quote makes the
+whole response unparseable and costs the player their turn. Write newlines inside strings as \\n, never as a literal
+line break. Use this exact structure:
 
 {
   "narration": "Your DM voice. Present tense, second person. 2-4 paragraphs. Technically grounded. Dramatically alive. No mechanical meta-commentary.",

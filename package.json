@@ -24,6 +24,7 @@
     "verify:report": "tsx scripts/verify-report.ts",
     "verify:cpe": "tsx scripts/verify-cpe.ts",
     "verify:certificate": "tsx scripts/verify-certificate.ts",
+    "verify:llm-json": "tsx scripts/verify-llm-json.ts",
     "verify:cpe:live": "tsx scripts/live-cpe-test.ts",
     "verify:departmental": "npm run verify:rotation && npm run verify:report && npm run verify:cpe",
     "verify:live": "tsx scripts/live-departmental-test.ts"
