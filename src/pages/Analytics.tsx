@@ -10,6 +10,9 @@ import { computeGradeTrend } from '../utils/trendAnalysis'
 import { TrendChart } from '../components/TrendChart'
 import { aggregateTraitUsage } from '../utils/traitUsage'
 import { techniqueCoverageGaps } from '../utils/techniqueCoverage'
+import { useCampaignStore } from '../store/campaignStore'
+import { isCampaignCertifiable } from '../utils/campaignCertificate'
+import { CampaignCertificateButton } from '../components/CampaignCertificateButton'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -50,6 +53,9 @@ function timeAgo(ms: number): string {
 export function Analytics() {
   const navigate = useNavigate()
   const { sessionHistory, roster, clearHistory } = useGameStore()
+  // Certificates are issued only for campaigns that were actually played to the
+  // end — see isCampaignCertifiable; a status flipped by hand doesn't qualify.
+  const completedCampaigns = useCampaignStore((s) => s.campaigns).filter(isCampaignCertifiable)
 
   const [confirmClear, setConfirmClear] = useState(false)
   const [expandedGap,  setExpandedGap]  = useState<string | null>(null)
@@ -454,6 +460,36 @@ export function Analytics() {
             </>
           )}
         </section>
+
+        {/* ── Campaign certificates ──────────────────────────────────────────── */}
+        {completedCampaigns.length > 0 && (
+          <section>
+            <h2 className="text-xs font-bold tracking-widest text-gray-500 uppercase mb-1">
+              Campaign Certificates
+            </h2>
+            <p className="text-xs text-gray-400 mb-4">
+              Campaigns played through to the last scenario. Each certificate is a PNG recording the
+              scenarios, their difficulty, and the hours of gameplay behind them.
+            </p>
+            <div className="bg-white rounded border border-gray-200 divide-y divide-gray-100">
+              {completedCampaigns.map((c) => (
+                <div key={c.id} className="flex items-center justify-between gap-4 px-4 py-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-gray-900 truncate">{c.name || 'Untitled Campaign'}</div>
+                    <div className="text-[11px] text-gray-400 mt-0.5">
+                      {c.scenarioSequence.length} scenario{c.scenarioSequence.length === 1 ? '' : 's'}
+                      {' · completed '}
+                      {formatTimestamp(Math.max(...c.scenarioResults.map((r) => r.completedAt)))}
+                    </div>
+                  </div>
+                  <div className="flex-shrink-0">
+                    <CampaignCertificateButton campaign={c} variant="light" label="⬇ Certificate" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* ── Character progress ─────────────────────────────────────────────── */}
         {roster.length > 0 && (

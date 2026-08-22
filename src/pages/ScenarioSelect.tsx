@@ -5,10 +5,10 @@ import { ALL_SCENARIOS } from '../data/scenarios'
 import { useCampaignStore } from '../store/campaignStore'
 import { CATEGORIES, CUSTOM_CATEGORY } from '../data/categories'
 import type { ScenarioCategoryDef } from '../data/categories'
+import { DIFFICULTY_LABELS } from '../types/game'
 import type { ScenarioPack } from '../types/game'
 import { matchingTechniques } from '../utils/techniqueCoverage'
 
-const DIFF_LABEL = ['', 'Novice', 'Analyst', 'Senior', 'Expert', 'Elite']
 const DIFF_COLOR = ['', 'text-terminal-green', 'text-terminal-blue', 'text-terminal-amber', 'text-orange-400', 'text-terminal-red']
 
 interface Props {
@@ -301,7 +301,7 @@ function ScenarioCard({
           <div className="flex items-center gap-2 mb-0.5 flex-wrap">
             <span className="text-[9px] text-terminal-dim tracking-widest font-mono">{scenario.id}</span>
             <span className={`text-[10px] font-bold ${DIFF_COLOR[scenario.difficulty]}`}>
-              {DIFF_LABEL[scenario.difficulty]}
+              {DIFFICULTY_LABELS[scenario.difficulty]}
             </span>
             {isTutorial && (
               <span className="text-[9px] px-1.5 py-0.5 rounded border border-terminal-amber/40

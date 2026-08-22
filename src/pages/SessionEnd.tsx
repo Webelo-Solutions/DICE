@@ -11,6 +11,7 @@ import type { LevelUpEvent, LevelUpChoice } from '../utils/leveling'
 import { generateLearningPath } from '../utils/learningPath'
 import { LevelUpModal } from '../components/LevelUpModal'
 import { launchCampaignScenario } from '../utils/campaignPlay'
+import { CampaignCertificateButton } from '../components/CampaignCertificateButton'
 import { isTemplateCharacterId } from '../utils/departmentalSession'
 import { buildDepartmentalReport } from '../utils/departmentalReport'
 import { buildSessionCpeReport } from '../utils/cpe'
@@ -93,6 +94,9 @@ export function SessionEnd() {
         activeCampaignContext.scenarioIndex,
         session.scenario.id,
         result.outcome,
+        // Carried onto the campaign so a completion certificate can report real
+        // gameplay hours without having to re-derive them from session history.
+        { sessionId: session.id, startedAt: result.startedAt, endedAt: result.endedAt },
       )
       setActiveCampaignContext(null)
       const updated = useCampaignStore.getState().campaigns.find((c) => c.id === activeCampaignContext.campaignId)
@@ -223,8 +227,18 @@ export function SessionEnd() {
           )}
           {campaignProgress?.done && (
             <div className="mb-5 rounded border border-terminal-blue/40 bg-terminal-blue/5 px-4 py-3
-              text-xs text-terminal-blue font-semibold tracking-widest uppercase">
-              ✓ {campaignProgress.campaign.name} — Campaign Complete
+              flex items-center justify-between gap-4">
+              <div>
+                <div className="text-xs text-terminal-blue font-semibold tracking-widest uppercase">
+                  ✓ {campaignProgress.campaign.name} — Campaign Complete
+                </div>
+                <div className="text-xs text-terminal-dim mt-0.5">
+                  Every scenario in the sequence is finished. Download the completion certificate.
+                </div>
+              </div>
+              <div className="flex-shrink-0">
+                <CampaignCertificateButton campaign={campaignProgress.campaign} variant="dark" />
+              </div>
             </div>
           )}
 

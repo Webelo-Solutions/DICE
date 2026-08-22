@@ -36,6 +36,13 @@ export interface CampaignScenarioResult {
   scenarioId:    string
   outcome:       SessionResult['outcome']
   completedAt:   number
+  // Play-time provenance, written at completion from the session that produced
+  // this result. Absent on results recorded before these fields existed; the
+  // completion certificate backfills those from session history by scenario id
+  // (see src/utils/campaignCertificate.ts) rather than inventing a duration.
+  sessionId?:    string
+  startedAt?:    number
+  endedAt?:      number
 }
 
 export interface Campaign {

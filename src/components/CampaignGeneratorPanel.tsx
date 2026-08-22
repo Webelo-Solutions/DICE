@@ -6,8 +6,8 @@ import { useCampaignStore } from '../store/campaignStore'
 import { generateCampaign, rerollSlot, newSeed } from '../utils/campaignGenerator'
 import type { GeneratorOptions, GeneratedSlot } from '../utils/campaignGenerator'
 import { SectionTitle, Field, inputCls, labelCls } from './formAtoms'
+import { DIFFICULTY_LABELS } from '../types/game'
 
-const DIFF_LABEL = ['', 'Novice', 'Analyst', 'Senior', 'Expert', 'Elite']
 const DIFF_COLOR = ['', 'text-terminal-green', 'text-terminal-blue', 'text-terminal-amber', 'text-orange-400', 'text-terminal-red']
 
 const fmtHours = (mins: number) => `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m`
@@ -88,12 +88,12 @@ export function CampaignGeneratorPanel({ onApply, onCancel }: Props) {
           </Field>
           <Field label="Easiest difficulty">
             <select className={inputCls} value={minDifficulty} onChange={(e) => setMinDifficulty(Number(e.target.value))}>
-              {[1, 2, 3, 4, 5].map((d) => <option key={d} value={d}>{d} — {DIFF_LABEL[d]}</option>)}
+              {[1, 2, 3, 4, 5].map((d) => <option key={d} value={d}>{d} — {DIFFICULTY_LABELS[d]}</option>)}
             </select>
           </Field>
           <Field label="Hardest difficulty">
             <select className={inputCls} value={maxDifficulty} onChange={(e) => setMaxDifficulty(Number(e.target.value))}>
-              {[1, 2, 3, 4, 5].map((d) => <option key={d} value={d}>{d} — {DIFF_LABEL[d]}</option>)}
+              {[1, 2, 3, 4, 5].map((d) => <option key={d} value={d}>{d} — {DIFFICULTY_LABELS[d]}</option>)}
             </select>
           </Field>
           <Field label="Total time budget (min)">
@@ -168,7 +168,7 @@ export function CampaignGeneratorPanel({ onApply, onCancel }: Props) {
                     bg-terminal-surface/40">
                   <span className="text-[10px] text-terminal-dim w-5 text-right flex-shrink-0 tabular-nums">{i + 1}</span>
                   <span className={`text-[10px] w-16 flex-shrink-0 ${DIFF_COLOR[slot.scenario.difficulty]}`}>
-                    {DIFF_LABEL[slot.scenario.difficulty]}
+                    {DIFFICULTY_LABELS[slot.scenario.difficulty]}
                   </span>
                   <div className="flex-1 min-w-0">
                     <div className="text-xs text-white truncate">{slot.scenario.title}</div>

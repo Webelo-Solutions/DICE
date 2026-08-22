@@ -4,6 +4,7 @@ import { useCampaignStore } from '../store/campaignStore'
 import { useGameStore }     from '../store/gameStore'
 import { useToastStore }    from '../store/toastStore'
 import { ALL_SCENARIOS }    from '../data/scenarios'
+import { DIFFICULTY_LABELS } from '../types/game'
 import type { ScenarioPack, ScenarioAct, Inject, Clue, SessionResult } from '../types/game'
 import type { Campaign, CustomScenario } from '../types/campaign'
 import type { OrgProfile } from '../types/orgProfile'
@@ -18,7 +19,6 @@ import { launchCampaignScenario } from '../utils/campaignPlay'
 
 function uid() { return crypto.randomUUID() }
 
-const DIFF_LABEL = ['', 'Novice', 'Analyst', 'Senior', 'Expert', 'Elite']
 const DIFF_COLOR = ['', 'text-terminal-green', 'text-terminal-blue', 'text-terminal-amber', 'text-orange-400', 'text-terminal-red']
 
 const STATUS_LABEL: Record<Campaign['status'], string> = {
@@ -225,7 +225,7 @@ export function ScenarioEditorForm({ initial, onSave, onDelete, isNew }: SEProps
             <select className={inputCls} value={sc.difficulty}
               onChange={(e) => setField('difficulty', Number(e.target.value) as 1|2|3|4|5)}>
               {([1,2,3,4,5] as const).map((d) => (
-                <option key={d} value={d}>{d} — {DIFF_LABEL[d]}</option>
+                <option key={d} value={d}>{d} — {DIFFICULTY_LABELS[d]}</option>
               ))}
             </select>
           </Field>
@@ -680,7 +680,7 @@ function CampaignEditorForm({ initial, onSave, onDelete, onPlay, isNew }: CEProp
                   <span className="text-[10px] text-terminal-dim w-4 text-center flex-shrink-0">{i + 1}</span>
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-semibold text-white truncate">{sc.title}</div>
-                    <div className="text-[10px] text-terminal-dim">{sc.id} · {DIFF_LABEL[sc.difficulty]}</div>
+                    <div className="text-[10px] text-terminal-dim">{sc.id} · {DIFFICULTY_LABELS[sc.difficulty]}</div>
                   </div>
                   {scenarioResult && (
                     <span className={`text-[10px] font-semibold ${OUTCOME_COLOR[scenarioResult.outcome]}`}>
@@ -711,7 +711,7 @@ function CampaignEditorForm({ initial, onSave, onDelete, onPlay, isNew }: CEProp
                   <span className="text-[10px] text-terminal-dim w-20 flex-shrink-0">{s.id}</span>
                   <span className="flex-1 text-xs text-white truncate">{s.title}</span>
                   <span className={`text-[10px] flex-shrink-0 ${DIFF_COLOR[s.difficulty]}`}>
-                    {DIFF_LABEL[s.difficulty]}
+                    {DIFFICULTY_LABELS[s.difficulty]}
                   </span>
                   <span className="text-[10px] text-terminal-green opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                     + Add

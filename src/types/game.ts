@@ -182,6 +182,10 @@ export interface ScenarioPack {
   criticalFailInjectIds?: string[]
 }
 
+// Display names for ScenarioPack.difficulty, indexed by the value itself —
+// index 0 is unused padding so DIFFICULTY_LABELS[3] reads as "difficulty 3".
+export const DIFFICULTY_LABELS = ['', 'Novice', 'Analyst', 'Senior', 'Expert', 'Elite'] as const
+
 // ─── Timer Difficulty ─────────────────────────────────────────────────────────
 
 export type TimerDifficulty = 'rookie' | 'analyst' | 'senior' | 'elite' | 'none'

@@ -17,11 +17,15 @@ interface CampaignStore {
   // Records the outcome of the scenario at `scenarioIndex` within a campaign's
   // sequence. If that index is the campaign's current one, advances to the
   // next scenario (or marks the campaign completed if it was the last).
+  // `timing` carries the play window of the session that produced this result,
+  // so a completion certificate can report real gameplay hours. Optional: a
+  // result recorded without it still lands, it just has no measured duration.
   completeCampaignScenario: (
     campaignId:    string,
     scenarioIndex: number,
     scenarioId:    string,
     outcome:       SessionResult['outcome'],
+    timing?:       { sessionId: string; startedAt: number; endedAt: number },
   ) => void
 
   // Custom scenario CRUD
@@ -53,13 +57,13 @@ export const useCampaignStore = create<CampaignStore>()(
       deleteCampaign: (id) =>
         set((s) => ({ campaigns: s.campaigns.filter((c) => c.id !== id) })),
 
-      completeCampaignScenario: (campaignId, scenarioIndex, scenarioId, outcome) =>
+      completeCampaignScenario: (campaignId, scenarioIndex, scenarioId, outcome, timing) =>
         set((s) => ({
           campaigns: s.campaigns.map((c) => {
             if (c.id !== campaignId) return c
             const scenarioResults = [
               ...c.scenarioResults.filter((r) => r.scenarioIndex !== scenarioIndex),
-              { scenarioIndex, scenarioId, outcome, completedAt: Date.now() },
+              { scenarioIndex, scenarioId, outcome, completedAt: Date.now(), ...timing },
             ]
             const isCurrent  = scenarioIndex === c.currentScenarioIndex
             const nextIndex  = isCurrent ? c.currentScenarioIndex + 1 : c.currentScenarioIndex
