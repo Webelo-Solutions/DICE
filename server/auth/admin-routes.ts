@@ -30,7 +30,7 @@ const DEFAULT_CADENCE_DAYS = 90
 // rather than the provider, so this is set per install and falls back to a
 // label that is obviously a placeholder instead of quietly looking official.
 const CPE_PROVIDER_KEY = 'cpeProviderName'
-const DEFAULT_CPE_PROVIDER = 'Unnamed organization'
+const DEFAULT_CPE_PROVIDER = 'Webelo Solutions, LLC'
 const MAX_CPE_PROVIDER_LENGTH = 120
 const MIN_CADENCE_DAYS = 1
 const MAX_CADENCE_DAYS = 3650

@@ -2,11 +2,7 @@ import PDFDocument from 'pdfkit'
 import type { SessionRecord } from '../../src/types/history'
 import type { CpeAward } from '../../src/types/cpe'
 import { formatTimestamp } from '../../src/utils/learningPath'
-
-const ACCENT = '#0B5FFF'
-const INK    = '#111111'
-const DIM    = '#666666'
-const RULE   = '#DDDDDD'
+import { ACCENT, INK, DIM, RULE, paintCertificateBackground, drawSignatureBlock } from './certificateChrome'
 
 // Renders one attendee's CPE certificate for one session. Pure function of the
 // stored record plus the award being certified — the credit number is NOT
@@ -19,7 +15,7 @@ export function renderCpeCertificatePdf(
   providerName: string,
 ): Promise<Buffer> {
   return new Promise((resolvePromise, reject) => {
-    const doc = new PDFDocument({ size: 'LETTER', layout: 'landscape', margins: { top: 56, bottom: 56, left: 64, right: 64 } })
+    const doc = new PDFDocument({ size: 'LETTER', layout: 'landscape', margins: { top: 42, bottom: 42, left: 64, right: 64 } })
     const chunks: Buffer[] = []
     doc.on('data', (c: Buffer) => chunks.push(c))
     doc.on('end', () => resolvePromise(Buffer.concat(chunks)))
@@ -27,6 +23,8 @@ export function renderCpeCertificatePdf(
 
     const cpe = record.cpe!
     const width = doc.page.width - doc.page.margins.left - doc.page.margins.right
+
+    paintCertificateBackground(doc, width)
 
     // ── Header ───────────────────────────────────────────────────────────────
     doc.font('Helvetica-Bold').fontSize(10).fillColor(DIM)
@@ -87,7 +85,14 @@ export function renderCpeCertificatePdf(
     // ── How the number was reached ───────────────────────────────────────────
     // Printed on the certificate rather than kept in a database, because the
     // reader who has to accept this number is the one holding the paper.
-    doc.font('Helvetica-Bold').fontSize(9).fillColor(DIM).text('BASIS OF AWARD', { characterSpacing: 0.5 })
+    //
+    // Every call below pins x explicitly. The row() helper above leaves
+    // pdfkit's text cursor sitting at margins.left + labelWidth (the x it used
+    // for each value column); a .text() call here that omitted x would inherit
+    // that offset while still wrapping at the full content width, running the
+    // tail of the line off the right edge of the page.
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(DIM)
+      .text('BASIS OF AWARD', doc.page.margins.left, doc.y, { characterSpacing: 0.5 })
     doc.moveDown(0.3)
     const fragments = award.spans > 1
       ? ` Attendance was recorded across ${award.spans} separate connections${award.disconnects > 0 ? ` (${award.disconnects} disconnect${award.disconnects === 1 ? '' : 's'})` : ''}.`
@@ -96,20 +101,26 @@ export function renderCpeCertificatePdf(
       `Credit is awarded at one CPE per ${cpe.rules.minutesPerCredit} minutes of measured attendance, in `
       + `${cpe.rules.creditIncrement} credit increments, rounded down. Attendance is measured from connection `
       + `records captured during the exercise, not from the scheduled length.${fragments}`,
-      { width, align: 'left' },
+      doc.page.margins.left, doc.y, { width, align: 'left' },
     )
 
-    doc.moveDown(0.9)
+    doc.moveDown(0.4)
+
+    // ── Signature ────────────────────────────────────────────────────────────
+    // See the discussion in src/utils/cpe.ts about what makes a self-issued
+    // certificate credible — a named, reachable signer is part of that.
+    drawSignatureBlock(doc, doc.page.margins.left)
+
     doc.font('Helvetica').fontSize(8).fillColor(DIM).text(
       `Verification reference: session ${record.id} · participant ${award.participantId}`,
-      { width },
+      doc.page.margins.left, doc.y, { width },
     )
     doc.moveDown(0.2)
     doc.font('Helvetica').fontSize(8).fillColor(DIM).text(
       'The attendee is responsible for confirming this activity qualifies under the CPE policy of the '
       + 'credential being maintained, and for submitting it to ISC². This certificate records attendance; '
       + 'it is not an ISC²-endorsed document.',
-      { width },
+      doc.page.margins.left, doc.y, { width },
     )
 
     doc.end()

@@ -65,6 +65,34 @@ export async function downloadFile(path: string, fallbackFilename: string): Prom
   URL.revokeObjectURL(url)
 }
 
+// Same as downloadFile, but for an endpoint that renders its file from a
+// posted body rather than looking one up by id — e.g. a campaign certificate,
+// which has no server-side record to fetch (see the /campaigns/certificate.pdf
+// route: it's a stateless print service over whatever the client sends).
+async function downloadFileViaPost(path: string, body: unknown, fallbackFilename: string): Promise<void> {
+  const token = useUserStore.getState().token
+  const res = await fetch(BASE + path, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    throw new Error(`Download failed: ${res.status} ${detail}`)
+  }
+  const blob = await res.blob()
+  const match = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')
+  const filename = match ? match[1] : fallbackFilename
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename
+  document.body.appendChild(a); a.click(); a.remove()
+  URL.revokeObjectURL(url)
+}
+
 export const api = {
   // ── Roster ──
   listCharacters:   () => req<Character[]>('/characters'),
@@ -76,6 +104,19 @@ export const api = {
   listCampaigns:    () => req<Campaign[]>('/campaigns'),
   upsertCampaign:   (c: Campaign) => put<Campaign>(`/campaigns/${encodeURIComponent(c.id)}`, c),
   deleteCampaign:   (id: string) => del(`/campaigns/${encodeURIComponent(id)}`),
+  // PDF completion certificate for a finished campaign — the executive-summary
+  // companion to the detailed PNG certificate, which is rendered entirely
+  // client-side (src/utils/certificateImage.ts) and never touches the server.
+  downloadCampaignCertificatePdf: (input: {
+    recipientName:  string
+    campaignName:   string
+    startedAt:      number
+    completedAt:    number
+    scenarioCount:  number
+    totalHours:     number
+    outcomeCounts:  { victory: number; partial: number; defeat: number }
+    certificateId:  string
+  }) => downloadFileViaPost('/campaigns/certificate.pdf', input, 'DICE-Campaign-Certificate.pdf'),
 
   // ── Custom scenarios ──
   listCustomScenarios:  () => req<CustomScenario[]>('/custom-scenarios'),

@@ -12,6 +12,8 @@ import { validateDicepack } from '../src/content/dicepackSchema'
 import type { ContentPackRow } from './db/repository'
 import { renderSessionReportPdf } from './reports/sessionReportPdf'
 import { renderCpeCertificatePdf } from './reports/cpeCertificatePdf'
+import { renderCampaignCertificatePdf } from './reports/campaignCertificatePdf'
+import type { CampaignCertificateInput } from './reports/campaignCertificatePdf'
 import { toCsv } from './reports/csv'
 
 interface IdParam { id: string }
@@ -109,6 +111,21 @@ export async function apiRoutes(app: FastifyInstance) {
     const deleted = repository.deleteCampaign(req.params.id, uid(req))
     if (!deleted) return reply.code(404).send({ error: 'Campaign not found' })
     return { deleted: req.params.id }
+  })
+  // Campaigns have no server-side record of their own — the client already
+  // computed this exact shape for the PNG completion certificate
+  // (src/utils/campaignCertificate.ts) and posts it here for the PDF
+  // treatment. A stateless print service: nothing is looked up or stored.
+  app.post<{ Body: CampaignCertificateInput }>('/campaigns/certificate.pdf', auth, async (req, reply) => {
+    const b = req.body
+    if (!b?.recipientName || !b?.campaignName || !b?.certificateId) {
+      return reply.code(400).send({ error: 'recipientName, campaignName and certificateId are required' })
+    }
+    const pdf = await renderCampaignCertificatePdf(b)
+    reply.type('application/pdf')
+    const safeName = b.campaignName.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'Campaign'
+    reply.header('Content-Disposition', `attachment; filename="DICE-Campaign-Certificate-${safeName}.pdf"`)
+    return reply.send(pdf)
   })
 
   // ── Custom scenarios (user-scoped; pack content is shared across users) ──
@@ -208,7 +225,7 @@ export async function apiRoutes(app: FastifyInstance) {
       if (award.credits <= 0) {
         return reply.code(409).send({ error: 'that participant did not attend long enough to earn credit' })
       }
-      const providerName = repository.getKv<string>('cpeProviderName') ?? 'Unnamed organization'
+      const providerName = repository.getKv<string>('cpeProviderName') ?? 'Webelo Solutions, LLC'
       const pdf = await renderCpeCertificatePdf(record, award, providerName)
       reply.type('application/pdf')
       const safeName = award.attendeeName.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'Attendee'

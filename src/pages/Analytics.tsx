@@ -468,8 +468,9 @@ export function Analytics() {
               Campaign Certificates
             </h2>
             <p className="text-xs text-gray-400 mb-4">
-              Campaigns played through to the last scenario. Each certificate is a PNG recording the
-              scenarios, their difficulty, and the hours of gameplay behind them.
+              Campaigns played through to the last scenario. PNG is the detailed record — every
+              scenario, its difficulty, and the hours behind it. PDF is a summary certificate of
+              completion.
             </p>
             <div className="bg-white rounded border border-gray-200 divide-y divide-gray-100">
               {completedCampaigns.map((c) => (
@@ -483,7 +484,7 @@ export function Analytics() {
                     </div>
                   </div>
                   <div className="flex-shrink-0">
-                    <CampaignCertificateButton campaign={c} variant="light" label="⬇ Certificate" />
+                    <CampaignCertificateButton campaign={c} variant="light" />
                   </div>
                 </div>
               ))}

@@ -233,7 +233,7 @@ export function SessionEnd() {
                   ✓ {campaignProgress.campaign.name} — Campaign Complete
                 </div>
                 <div className="text-xs text-terminal-dim mt-0.5">
-                  Every scenario in the sequence is finished. Download the completion certificate.
+                  Every scenario in the sequence is finished. Download a completion certificate.
                 </div>
               </div>
               <div className="flex-shrink-0">
